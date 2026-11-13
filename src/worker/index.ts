@@ -32,6 +32,8 @@ import { base64ToBytes, bytesToBase64, encryptString, importTokenKey, randomToke
 import type { Env } from "./env.js";
 import { allowHost, clearCookie, csrfOk, enforceAccess, issueCsrf, rateLimit, readCookie, rpFromUrl, sessionToken, startSession, trader, type AppContext } from "./http.js";
 import { AccountTrader } from "./trader.js";
+import { serveEmbedded } from "./embedded-assets.js";
+import type { RuleSide, RuleStatus } from "../lib/rules.js";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -257,13 +259,14 @@ app.post("/api/mode", async (c) => {
 app.post("/api/settings", async (c) => {
   const stepped = await requireStepUp(c);
   if (stepped) return stepped;
-  const body = await c.req.json<{ profitTargetPct?: number; stopLossPct?: number; maxOrderPct?: number; dailyLossPct?: number }>();
+  const body = await c.req.json<{ profitTargetPct?: number; stopLossPct?: number; dailyLossPct?: number; orderCap?: number; tradingCapital?: number }>();
   try {
     return c.json(await callTrader(c, "saveSettings", {
       profitTargetPct: Number(body.profitTargetPct),
       stopLossPct: Number(body.stopLossPct),
-      maxOrderPct: Number(body.maxOrderPct),
       dailyLossPct: Number(body.dailyLossPct),
+      orderCap: Number(body.orderCap),
+      tradingCapital: body.tradingCapital == null ? undefined : Number(body.tradingCapital),
     }));
   } catch (error) {
     return c.json({ error: error instanceof Error ? error.message : "Could not save settings." }, 400);
@@ -279,6 +282,138 @@ app.post("/api/top10", async (c) => {
   } catch (error) {
     return c.json({ error: error instanceof Error ? error.message : "Could not save the Top 10." }, 400);
   }
+});
+
+
+app.get("/api/simulator", async (c) => {
+  const limited = await rateLimit(c, "read", 120);
+  if (limited) return limited;
+  const stub = trader(c) as unknown as AccountTrader;
+  return c.json(await stub.simulator());
+});
+
+app.post("/api/simulator/cycle", async (c) => {
+  const limited = await rateLimit(c, "trade", 20);
+  if (limited) return limited;
+  const body = await c.req.json<{ ruleIds?: string[] }>().catch(() => ({} as { ruleIds?: string[] }));
+  const stub = trader(c) as unknown as AccountTrader;
+  return c.json(await stub.cycleSimulator(body.ruleIds));
+});
+
+app.post("/api/simulator/select", async (c) => {
+  const limited = await rateLimit(c, "trade", 20);
+  if (limited) return limited;
+  const body = await c.req.json<{ ruleIds?: string[] }>();
+  const stub = trader(c) as unknown as AccountTrader;
+  return c.json(await stub.setSelectedRules(body.ruleIds ?? []));
+});
+
+app.post("/api/sell-all", async (c) => {
+  const limited = await rateLimit(c, "trade", 20);
+  if (limited) return limited;
+  const body = await c.req.json<{ confirm?: boolean }>().catch(() => ({} as { confirm?: boolean }));
+  if (!body.confirm) return c.json({ error: "Confirm selling every simulated position and stopping new buys." }, 400);
+  const stub = trader(c) as unknown as AccountTrader;
+  return c.json(await stub.sellAll());
+});
+
+
+app.post("/api/positions/:id/capital", async (c) => {
+  const limited = await rateLimit(c, "trade", 20);
+  if (limited) return limited;
+  const body = await c.req.json<{ amount?: number; confirm?: boolean }>();
+  try {
+    const stub = trader(c) as unknown as AccountTrader;
+    return c.json(await stub.editPositionCapital(c.req.param("id"), Number(body.amount), body.confirm === true));
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "Could not edit capital." }, 400);
+  }
+});
+
+app.post("/api/positions/:id/exits", async (c) => {
+  const stepped = await requireStepUp(c);
+  if (stepped) return stepped;
+  const body = await c.req.json<{ profitTargetPct?: number; stopLossPct?: number }>();
+  try {
+    const stub = trader(c) as unknown as AccountTrader;
+    return c.json(await stub.editPositionExits(c.req.param("id"), body));
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "Could not edit the target or stop." }, 400);
+  }
+});
+
+app.get("/api/reviews", async (c) => {
+  const limited = await rateLimit(c, "read", 120);
+  if (limited) return limited;
+  const stub = trader(c) as unknown as AccountTrader;
+  const url = new URL(c.req.url);
+  return c.json(await stub.reviewScreen({
+    ruleId: url.searchParams.get("rule") || undefined,
+    symbol: url.searchParams.get("symbol") || undefined,
+    session: url.searchParams.get("session") || undefined,
+    from: url.searchParams.get("from") ? Number(url.searchParams.get("from")) : undefined,
+    to: url.searchParams.get("to") ? Number(url.searchParams.get("to")) : undefined,
+    mode: (url.searchParams.get("mode") as "live" | "sim" | null) || undefined,
+  }));
+});
+
+app.post("/api/reviews/:positionId/note", async (c) => {
+  const limited = await rateLimit(c, "trade", 20);
+  if (limited) return limited;
+  const body = await c.req.json<{ userNote?: string }>();
+  const stub = trader(c) as unknown as AccountTrader;
+  await stub.updateReviewNote(c.req.param("positionId"), body.userNote ?? "");
+  return c.json({ ok: true });
+});
+
+app.get("/api/rules", async (c) => {
+  const limited = await rateLimit(c, "read", 120);
+  if (limited) return limited;
+  const stub = trader(c) as unknown as AccountTrader;
+  return c.json({ rules: await stub.listRuleViews() });
+});
+
+app.post("/api/rules", async (c) => {
+  const stepped = await requireStepUp(c);
+  if (stepped) return stepped;
+  const body = await c.req.json<{ name?: string; side?: RuleSide; body?: string; signals?: string[] }>();
+  try {
+    const stub = trader(c) as unknown as AccountTrader;
+    return c.json({ rules: await stub.createRuleView({ name: body.name ?? "", side: body.side ?? "buy", body: body.body ?? "", signals: body.signals ?? [] }) });
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "Could not create the rule." }, 400);
+  }
+});
+
+app.post("/api/rules/:id", async (c) => {
+  const stepped = await requireStepUp(c);
+  if (stepped) return stepped;
+  const body = await c.req.json<{ name?: string; body?: string; signals?: string[] }>();
+  try {
+    const stub = trader(c) as unknown as AccountTrader;
+    return c.json({ rules: await stub.editRuleView(c.req.param("id"), body) });
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "Could not edit the rule." }, 400);
+  }
+});
+
+app.post("/api/rules/:id/status", async (c) => {
+  const stepped = await requireStepUp(c);
+  if (stepped) return stepped;
+  const body = await c.req.json<{ status?: RuleStatus }>();
+  try {
+    const stub = trader(c) as unknown as AccountTrader;
+    return c.json({ rules: await stub.setRuleStatusView(c.req.param("id"), body.status as RuleStatus) });
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "Could not change the rule status." }, 400);
+  }
+});
+
+app.get("/api/rules/:familyId/history", async (c) => {
+  const limited = await rateLimit(c, "read", 120);
+  if (limited) return limited;
+  const stub = trader(c) as unknown as AccountTrader;
+  return c.json({ history: await stub.ruleHistoryView(c.req.param("familyId")) });
 });
 
 app.post("/api/robinhood/connect", async (c) => {
@@ -372,8 +507,13 @@ async function finishConnect(c: AppContext, input: { code: string; state: string
 
 app.all("*", async (c) => {
   if (c.req.method !== "GET" && c.req.method !== "HEAD") return c.json({ error: "Not found." }, 404);
-  const asset = await c.env.ASSETS.fetch(c.req.raw);
-  return withHtmlNoStore(asset);
+  const embedded = serveEmbedded(c.req.raw);
+  if (embedded) return withHtmlNoStore(embedded);
+  if (c.env.ASSETS) {
+    const asset = await c.env.ASSETS.fetch(c.req.raw);
+    return withHtmlNoStore(asset);
+  }
+  return c.json({ error: "Not found." }, 404);
 });
 
 app.onError((error, c) => {
@@ -395,7 +535,7 @@ async function callTrader(c: AppContext, method: "disconnect" | "summary" | "cyc
   if (method === "kill") return stub.kill();
   if (method === "resume") return stub.resume();
   if (method === "setMode") return stub.setMode(arg as "view_only" | "live");
-  if (method === "saveSettings") return stub.saveSettings(arg as { profitTargetPct: number; stopLossPct: number; maxOrderPct: number; dailyLossPct: number });
+  if (method === "saveSettings") return stub.saveSettings(arg as { profitTargetPct: number; stopLossPct: number; dailyLossPct: number; orderCap: number; tradingCapital?: number });
   return stub.saveTop10(arg as string[]);
 }
 
@@ -434,7 +574,7 @@ export { AccountTrader };
 export default {
   fetch: app.fetch,
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    const stub = env.TRADER.get(env.TRADER.idFromName("owner")) as unknown as { cycle: () => Promise<unknown> };
-    ctx.waitUntil(stub.cycle());
+    const stub = env.TRADER.get(env.TRADER.idFromName("owner")) as unknown as { tickSimulator: () => Promise<unknown> };
+    ctx.waitUntil(stub.tickSimulator());
   },
 };

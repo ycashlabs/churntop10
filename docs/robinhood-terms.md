@@ -17,18 +17,13 @@ OAuth is the Trading MCP resource `https://agent.robinhood.com/mcp/trading`. Dis
 
 ## Pattern day trader
 
-Two sources disagree on purpose, and the dates explain it.
-
-- [FINRA Regulatory Notice 26-10](https://www.finra.org/rules-guidance/notices/26-10) (20 Apr 2026) adopts intraday margin standards that replace the day-trading margin rules, including the pattern-day-trader count and the $25,000 minimum. Effective 4 Jun 2026, with a phase-in through 20 Oct 2027. [Notice 26-11](https://www.finra.org/rules-guidance/notices/26-11) deletes the old PDT interpretations.
-- [Robinhood's pattern day trading article](https://robinhood.com/us/en/support/articles/pattern-day-trading/) still describes the old rule: 4 or more day trades in 5 trading days, more than 6% of trades in that window, margin accounts, $25,000 equity. That page had not been rewritten to the FINRA notice when this was checked.
-
-The app keeps a local cap of 3 round trips in the last 5 business days. It is this app's limit, not a claim that Robinhood will flag the account. A stop-loss or target sell is allowed even when the cap is used up. New buys are not. Exchange holidays are not on the calendar yet.
+The PDT 3-day-trade cap is **removed** from this app. [FINRA Regulatory Notice 26-10](https://www.finra.org/rules-guidance/notices/26-10) (20 Apr 2026) replaces the day-trading margin rules, including the pattern-day-trader count and the $25,000 minimum, effective 4 Jun 2026. Robinhood has removed PDT. The MCP account ••••4028 is limited margin, which allows trading unsettled funds; with under $2,000 there is no leverage.
 
 ## Sessions
 
 - Regular hours are 9:30–16:00 ET. Extended hours on Robinhood's limit-order page are 7:00–9:30 and 16:00–20:00 ET. [24 Hour Market](https://robinhood.com/us/en/support/articles/24hour-market/) runs Sunday 8:00 PM ET through Friday 8:00 PM ET. The gap from Friday 8:00 PM to Sunday 8:00 PM is closed. Only whole-share limit orders trade in the 24 Hour Market.
 - The Trading MCP schema says `extended_hours` and `all_day_hours` execute limit orders only. `market`, `stop_market`, and `stop_limit` are `regular_hours` only. A stop tagged `regular_hours` after the close queues for the next regular open. It does not protect an overnight position.
 
-This app opens new buys only during regular hours, and every new buy carries a `stop_market` sell with `market_hours` of `regular_hours`. Extended and overnight sessions can exit a position with a limit order. A limit sell priced through the market would fill immediately, so the overnight stop is the app watching the quote and sending that limit only after the stop price trades. In the default simulator that watch is local. It is not a resting broker stop outside regular hours.
+This app opens new buys in every weekday session (pre-market, regular, after-hours, and overnight). The rules for order types, the synthetic stop, quote quality, and overnight eligibility are in [sessions.md](sessions.md). In short: outside regular hours, entries and exits are limit orders only, and the stop is watched by the app every 5 minutes rather than resting at the broker. When regular hours open, a watching synthetic stop is converted to a broker `stop_market`. `ALLOW_LIVE_TRADING` stays `"0"`, so this path runs in the simulator.
 
 New buys must be symbols on the Top 10. A buy that adds to a symbol you already hold, and every sell, is not limited by that list.

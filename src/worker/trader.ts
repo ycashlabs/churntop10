@@ -8,9 +8,16 @@ import { formatShares, formatUsd, roundMoney } from "../lib/money.js";
 import { tradingMcpUrl } from "../lib/oauth.js";
 import { submitGatedTool } from "../lib/broker.js";
 import { assertOutgoing } from "../lib/requests.js";
-import { dailyLossAmount, dayTradeCount, validateExit, validateNewBuy, type GuardContext } from "../lib/validator.js";
+import { equityOf, ordersToday, runSimulatorCycle, sellAllSimPositions, type SimEvent, type SimState } from "../lib/simulator.js";
+import { dailyLossAmount, validExitPct, validateNewBuy, type GuardContext } from "../lib/validator.js";
+import type { RuleSide, RuleStatus } from "../lib/rules.js";
+import type { SimulatorView, RuleView, RuleHistoryView, PositionView, ReviewScreen } from "../lib/api-types.js";
 import { decryptString, importTokenKey } from "./crypto.js";
 import type { Env } from "./env.js";
+import { effectiveTradingCapital, openExposure, tradingCapitalPresets, validTradingCapital } from "../lib/capital.js";
+import { buildPositionReview } from "../lib/reviews.js";
+import type { PositionRecord, ReviewFilters, Storage, TradeRecord } from "../lib/storage.js";
+import { prepareStorage } from "./storage/d1.js";
 
 const DEFAULT_TOP10 = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "AVGO", "TSLA", "JPM", "LLY"];
 
@@ -20,6 +27,8 @@ interface SettingsRow {
   max_order_pct: number;
   daily_loss_pct: number;
   pdt_limit: number;
+  order_cap?: number;
+  trading_capital?: number;
   mode: "view_only" | "live";
   killed: number;
   day_start_equity: number;
@@ -28,28 +37,14 @@ interface SettingsRow {
   account_number: string;
 }
 
-interface PositionRow {
-  symbol: string;
-  quantity: number;
-  avg_cost: number;
-  opened_on: string;
-}
-
-interface OrderRow {
-  id: string;
-  ref_id: string;
-  symbol: string;
-  side: string;
-  type: string;
-  quantity: number;
-  limit_price: number | null;
-  stop_price: number | null;
-  status: string;
-  role: string;
-  opened_on: string;
-}
-
 export class AccountTrader extends DurableObject<Env> {
+  private storageHandle?: Storage;
+
+  private async store(): Promise<Storage> {
+    if (!this.storageHandle) this.storageHandle = await prepareStorage(this.env.DB);
+    return this.storageHandle;
+  }
+
   async summary(): Promise<Summary> {
     await this.seed();
     return this.buildSummary(await this.quoteBook());
@@ -58,12 +53,87 @@ export class AccountTrader extends DurableObject<Env> {
   async cycle(): Promise<Summary> {
     await this.seed();
     const book = await this.quoteBook();
-    await this.rollDay(book.quotes);
-    await this.manageExits(book.quotes);
-    await this.proposeEntries(book.quotes);
+    const now = new Date();
+    // Account / live path never writes simulator fills. Live broker orders stay behind the gate.
+    if (this.env.ALLOW_LIVE_TRADING === "1") await this.proposeLiveEntries(book.quotes, now);
     const summary = await this.buildSummary(book);
-    await this.audit("cycle", { session: summary.session, mode: summary.mode, killed: summary.killed, quoteSource: summary.quoteSource });
+    await this.audit("cycle", { session: summary.session, mode: summary.mode, killed: summary.killed, quoteSource: summary.quoteSource, path: "account" });
     return summary;
+  }
+
+  async cycleSimulator(selectedRuleIds?: string[]): Promise<SimulatorView> {
+    await this.seed();
+    if (selectedRuleIds) await this.setSelectedRules(selectedRuleIds);
+    const book = await this.quoteBook();
+    const now = new Date();
+    const { state, events } = runSimulatorCycle(await this.loadSim(), book.quotes, now, () => crypto.randomUUID(), book.source, true);
+    await this.saveSim(state, book.quotes);
+    for (const event of events) await this.audit(event.action, event.detail);
+    await this.audit("sim_cycle", { session: marketSession(now), quoteSource: book.source, events: events.length });
+    return this.buildSimulator(book, events);
+  }
+
+  async tickSimulator(): Promise<void> {
+    await this.seed();
+    const store = await this.store();
+    const open = await store.listPositions("sim", "open");
+    if (open.length === 0) return;
+    await this.cycleSimulator();
+    await this.maybeComputeScores();
+  }
+
+  async simulator(): Promise<SimulatorView> {
+    await this.seed();
+    return this.buildSimulator(await this.quoteBook());
+  }
+
+  async listRuleViews(): Promise<RuleView[]> {
+    await this.seed();
+    return this.ruleViews();
+  }
+
+  async createRuleView(input: { name: string; side: RuleSide; body: string; signals: string[] }): Promise<RuleView[]> {
+    await this.seed();
+    await (await this.store()).createRule(input);
+    await this.audit("rule_created", { name: input.name, side: input.side });
+    return this.ruleViews();
+  }
+
+  async editRuleView(id: string, input: { name?: string; body?: string; signals?: string[] }): Promise<RuleView[]> {
+    await this.seed();
+    const rule = await (await this.store()).editRule(id, input);
+    await this.audit("rule_edited", { id, familyId: rule.familyId, version: rule.version, status: rule.status });
+    return this.ruleViews();
+  }
+
+  async setRuleStatusView(id: string, status: RuleStatus): Promise<RuleView[]> {
+    await this.seed();
+    const rule = await (await this.store()).setRuleStatus(id, status);
+    await this.audit(status === "proven" ? "rule_approved" : "rule_status", { id, familyId: rule.familyId, status, version: rule.version });
+    return this.ruleViews();
+  }
+
+  async ruleHistoryView(familyId: string): Promise<RuleHistoryView[]> {
+    await this.seed();
+    return (await (await this.store()).listRuleHistory(familyId)).map((row) => ({
+      id: row.id,
+      action: row.action,
+      fromStatus: row.fromStatus,
+      toStatus: row.toStatus,
+      version: row.version,
+      detail: row.detail,
+      at: row.at,
+    }));
+  }
+
+  async setSelectedRules(ids: string[]): Promise<SimulatorView> {
+    await this.seed();
+    await this.env.DB.prepare("DELETE FROM sim_selected_rules").run();
+    if (ids.length) {
+      await this.env.DB.batch(ids.map((id) => this.env.DB.prepare("INSERT INTO sim_selected_rules (rule_id) VALUES (?)").bind(id)));
+    }
+    await this.audit("sim_rules_selected", { ids });
+    return this.simulator();
   }
 
   async saveTop10(symbols: string[]): Promise<Summary> {
@@ -78,15 +148,21 @@ export class AccountTrader extends DurableObject<Env> {
     return this.summary();
   }
 
-  async saveSettings(input: { profitTargetPct: number; stopLossPct: number; maxOrderPct: number; dailyLossPct: number }): Promise<Summary> {
+  async saveSettings(input: { profitTargetPct: number; stopLossPct: number; dailyLossPct: number; orderCap: number; tradingCapital?: number }): Promise<Summary> {
     await this.seed();
-    const { profitTargetPct, stopLossPct, maxOrderPct, dailyLossPct } = input;
-    if (profitTargetPct < 0.1 || profitTargetPct > 3) throw new Error("Profit target must be between 0.1% and 3% of account balance.");
-    if (stopLossPct < 0.1 || stopLossPct > 5) throw new Error("Stop-loss must be between 0.1% and 5%.");
-    if (maxOrderPct < 1 || maxOrderPct > 25) throw new Error("Order cap must be between 1% and 25% of equity.");
-    if (dailyLossPct < 0.1 || dailyLossPct > 5) throw new Error("Daily loss stop must be between 0.1% and 5%.");
-    await this.env.DB.prepare("UPDATE app_settings SET profit_target_pct = ?, stop_loss_pct = ?, max_order_pct = ?, daily_loss_pct = ? WHERE id = 1").bind(profitTargetPct, stopLossPct, maxOrderPct, dailyLossPct).run();
-    await this.audit("settings", input);
+    const { profitTargetPct, stopLossPct, dailyLossPct, orderCap } = input;
+    if (!validExitPct(profitTargetPct)) throw new Error("Profit target must be a positive percent no greater than 100.");
+    if (!validExitPct(stopLossPct)) throw new Error("Stop-loss must be a positive percent no greater than 100.");
+    if (!validExitPct(dailyLossPct)) throw new Error("Daily loss stop must be a positive percent no greater than 100.");
+    if (orderCap < 1 || orderCap > 1000) throw new Error("Order cap must be between 1 and 1000 orders per day.");
+    const store = await this.store();
+    const patch: { profitTargetPct: number; stopLossPct: number; dailyLossPct: number; orderCap: number; tradingCapital?: number } = { profitTargetPct, stopLossPct, dailyLossPct, orderCap };
+    if (input.tradingCapital != null) {
+      if (!validTradingCapital(input.tradingCapital)) throw new Error("Trading capital must be a positive dollar amount.");
+      patch.tradingCapital = input.tradingCapital;
+    }
+    await store.saveSettings(patch);
+    await this.audit("settings", patch);
     return this.summary();
   }
 
@@ -98,11 +174,20 @@ export class AccountTrader extends DurableObject<Env> {
     return this.summary();
   }
 
-  async kill(): Promise<Summary> {
+  async sellAll(): Promise<SimulatorView> {
     await this.seed();
-    await this.env.DB.prepare("UPDATE app_settings SET killed = 1, mode = 'view_only' WHERE id = 1").run();
-    await this.env.DB.prepare("UPDATE sim_orders SET status = 'cancelled' WHERE status = 'working' AND role = 'entry'").run();
-    await this.audit("kill", { liveCancel: "suppressed" });
+    const book = await this.quoteBook();
+    const now = new Date();
+    const { state, events } = sellAllSimPositions(await this.loadSim(), book.quotes, now, () => crypto.randomUUID());
+    await this.saveSim(state, book.quotes);
+    await this.env.DB.prepare("UPDATE app_settings SET killed = 1 WHERE id = 1").run();
+    for (const event of events) await this.audit(event.action, event.detail);
+    await this.audit("sell_all", { liveCancel: "suppressed", events: events.length });
+    return this.buildSimulator(book, events);
+  }
+
+  async kill(): Promise<Summary> {
+    await this.sellAll();
     return this.summary();
   }
 
@@ -114,13 +199,37 @@ export class AccountTrader extends DurableObject<Env> {
   }
 
   private async seed(): Promise<void> {
+    await this.ensureV2();
     const existing = await this.env.DB.prepare("SELECT id FROM app_settings WHERE id = 1").first();
-    if (existing) return;
-    const today = etParts(new Date()).date;
-    await this.env.DB.prepare(`INSERT INTO app_settings
-      (id, profit_target_pct, stop_loss_pct, max_order_pct, daily_loss_pct, pdt_limit, mode, killed, day_start_equity, day_start_date, cash, account_number)
-      VALUES (1, 1, 1, 10, 1, 3, 'view_only', 0, 10000, ?, 10000, 'SIM0000999')`).bind(today).run();
-    await this.env.DB.batch(DEFAULT_TOP10.map((symbol, index) => this.env.DB.prepare("INSERT INTO top10 (rank, symbol) VALUES (?, ?)").bind(index + 1, symbol)));
+    if (!existing) {
+      const today = etParts(new Date()).date;
+      await this.env.DB.prepare(`INSERT INTO app_settings
+        (id, profit_target_pct, stop_loss_pct, max_order_pct, daily_loss_pct, pdt_limit, order_cap, trading_capital, mode, killed, day_start_equity, day_start_date, cash, account_number)
+        VALUES (1, 1, 1, 10, 1, 3, 100, 10000, 'view_only', 0, 10000, ?, 10000, 'SIM0000999')`).bind(today).run();
+      await this.env.DB.batch(DEFAULT_TOP10.map((symbol, index) => this.env.DB.prepare("INSERT INTO top10 (rank, symbol) VALUES (?, ?)").bind(index + 1, symbol)));
+    }
+    await (await this.store()).seedDraftRules();
+  }
+
+  private async ensureV2(): Promise<void> {
+    const cols = (await this.env.DB.prepare("PRAGMA table_info(app_settings)").all<{ name: string }>()).results.map((row) => row.name);
+    if (!cols.includes("order_cap")) {
+      await this.env.DB.prepare("ALTER TABLE app_settings ADD COLUMN order_cap INTEGER NOT NULL DEFAULT 100").run();
+    }
+    await this.env.DB.prepare("CREATE TABLE IF NOT EXISTS rules (id TEXT PRIMARY KEY, family_id TEXT NOT NULL, name TEXT NOT NULL, side TEXT NOT NULL, body TEXT NOT NULL, signals TEXT NOT NULL, status TEXT NOT NULL, version INTEGER NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)").run();
+    await this.env.DB.prepare("CREATE TABLE IF NOT EXISTS rule_history (id TEXT PRIMARY KEY, rule_id TEXT NOT NULL, family_id TEXT NOT NULL, action TEXT NOT NULL, from_status TEXT, to_status TEXT, version INTEGER NOT NULL, detail TEXT NOT NULL, at INTEGER NOT NULL)").run();
+    await this.env.DB.prepare("CREATE TABLE IF NOT EXISTS sim_trades (id TEXT PRIMARY KEY, symbol TEXT NOT NULL, quantity REAL NOT NULL, entry_price REAL NOT NULL, exit_price REAL NOT NULL, pnl REAL NOT NULL, opened_on TEXT NOT NULL, closed_at INTEGER NOT NULL, buy_rule_id TEXT, buy_rule_version INTEGER, sell_rule_id TEXT, sell_rule_version INTEGER, signals TEXT NOT NULL, reason TEXT NOT NULL)").run();
+    await this.env.DB.prepare("CREATE TABLE IF NOT EXISTS sim_selected_rules (rule_id TEXT PRIMARY KEY)").run();
+    await this.env.DB.prepare("CREATE TABLE IF NOT EXISTS quote_bars (symbol TEXT NOT NULL, ts INTEGER NOT NULL, price REAL NOT NULL, volume REAL NOT NULL, PRIMARY KEY (symbol, ts))").run();
+    const posCols = (await this.env.DB.prepare("PRAGMA table_info(sim_positions)").all<{ name: string }>()).results.map((row) => row.name);
+    for (const [name, sql] of [
+      ["buy_rule_id", "ALTER TABLE sim_positions ADD COLUMN buy_rule_id TEXT"],
+      ["buy_rule_version", "ALTER TABLE sim_positions ADD COLUMN buy_rule_version INTEGER"],
+      ["sell_rule_id", "ALTER TABLE sim_positions ADD COLUMN sell_rule_id TEXT"],
+      ["sell_rule_version", "ALTER TABLE sim_positions ADD COLUMN sell_rule_version INTEGER"],
+    ] as const) {
+      if (!posCols.includes(name)) await this.env.DB.prepare(sql).run();
+    }
   }
 
   private async settings(): Promise<SettingsRow> {
@@ -223,151 +332,248 @@ export class AccountTrader extends DurableObject<Env> {
     return parseMcp(response.headers.get("content-type") ?? "", text);
   }
 
-  private async proposeEntries(quotes: QuoteView[]): Promise<void> {
+  private async loadSim(): Promise<SimState> {
+    const store = await this.store();
+    const settings = await store.getSettings();
+    if (!settings) throw new Error("settings missing");
+    const top10 = await store.listTop10();
+    const open = await store.listPositions("sim", "open");
+    const orders = await store.listWorkingOrders();
+    const proposals = await store.listProposals();
+    const barsRows = await store.listBars();
+    const bars: SimState["bars"] = {};
+    for (const row of barsRows) {
+      (bars[row.symbol] ??= []).push({ ts: row.ts, price: row.price, volume: row.volume });
+    }
+    const rules = await store.currentRules();
+    const selected = await store.selectedRuleIds();
+    const closed = await store.listPositions("sim", "closed");
+    const trades = [];
+    for (const position of closed.slice(0, 50)) {
+      const legs = await store.listTrades(position.id);
+      const buy = legs.find((leg) => leg.side === "buy" && leg.status === "filled");
+      const sell = [...legs].reverse().find((leg) => leg.side === "sell" && leg.status === "filled");
+      if (!buy || !sell) continue;
+      trades.push({
+        id: position.id,
+        symbol: position.symbol,
+        quantity: position.qty,
+        entryPrice: position.avgCost,
+        exitPrice: sell.fillPrice ?? position.avgCost,
+        pnl: (sell.fillPrice ?? 0) * position.qty - position.avgCost * position.qty,
+        openedOn: new Date(position.openedAt).toISOString().slice(0, 10),
+        closedAt: position.closedAt ?? 0,
+        buyRuleId: position.buyRuleVersionId,
+        sellRuleId: position.sellRuleVersionId,
+        signals: sell.signals ?? [],
+        reason: sell.exitReason ?? "exit",
+      });
+    }
+    return {
+      cash: settings.cash,
+      dayStartEquity: settings.dayStartEquity,
+      dayStartDate: settings.dayStartDate,
+      mode: settings.mode,
+      killed: settings.killed,
+      profitTargetPct: settings.profitTargetPct,
+      stopLossPct: settings.stopLossPct,
+      dailyLossPct: settings.dailyLossPct,
+      orderCap: settings.orderCap,
+      tradingCapital: settings.tradingCapital,
+      top10,
+      positions: open.map((row) => ({
+        id: row.id,
+        symbol: row.symbol,
+        quantity: row.qty,
+        avgCost: row.avgCost,
+        openedOn: new Date(row.openedAt).toISOString().slice(0, 10),
+        openedAt: row.openedAt,
+        tradingCapitalSnapshot: row.tradingCapitalSnapshot,
+        profitTargetPct: row.profitTargetPct,
+        stopLossPct: row.stopLossPct,
+        buyRuleId: row.buyRuleVersionId,
+        sellRuleId: row.sellRuleVersionId,
+      })),
+      orders: orders.map((row) => ({
+        id: String(row.id), refId: String(row.refId), symbol: String(row.symbol), side: String(row.side), type: String(row.type),
+        quantity: Number(row.quantity), limit: row.limit == null ? null : Number(row.limit), stop: row.stop == null ? null : Number(row.stop),
+        status: String(row.status), role: String(row.role), openedOn: String(row.openedOn), createdAt: Number(row.createdAt),
+      })),
+      dayTrades: [],
+      proposals: proposals.map((row) => ({
+        id: String(row.id), refId: String(row.refId), symbol: String(row.symbol), verdict: String(row.verdict),
+        message: String(row.message), payload: String(row.payload ?? ""), createdAt: Number(row.createdAt),
+      })),
+      trades,
+      usedRefIds: proposals.map((row) => String(row.refId)),
+      rules,
+      selectedRuleIds: selected,
+      bars,
+      spyBars: bars.SPY ?? [],
+      spyLast: bars.SPY?.at(-1)?.price,
+      pendingLegs: [],
+      closedThisCycle: [],
+    };
+  }
+
+  private async saveSim(state: SimState, quotes: QuoteView[] = []): Promise<void> {
+    const store = await this.store();
+    await store.saveSettings({ cash: state.cash, dayStartEquity: state.dayStartEquity, dayStartDate: state.dayStartDate, killed: state.killed });
+    const openIds = new Set(state.positions.map((position) => position.id));
+    for (const position of state.positions) {
+      await store.upsertPosition({
+        id: position.id,
+        mode: "sim",
+        symbol: position.symbol,
+        status: "open",
+        tradingCapitalSnapshot: position.tradingCapitalSnapshot,
+        profitTargetPct: position.profitTargetPct,
+        stopLossPct: position.stopLossPct,
+        buyRuleVersionId: position.buyRuleId,
+        sellRuleVersionId: position.sellRuleId,
+        avgCost: position.avgCost,
+        qty: position.quantity,
+        openedAt: position.openedAt,
+      });
+      const last = quotes.find((quote) => quote.symbol === position.symbol)?.last;
+      if (last) {
+        await store.insertPriceMark({ id: crypto.randomUUID(), positionId: position.id, at: Date.now(), price: last });
+      }
+    }
+    for (const closed of state.closedThisCycle ?? []) {
+      const record: PositionRecord = {
+        id: closed.position.id,
+        mode: "sim",
+        symbol: closed.position.symbol,
+        status: "closed",
+        tradingCapitalSnapshot: closed.position.tradingCapitalSnapshot,
+        profitTargetPct: closed.position.profitTargetPct,
+        stopLossPct: closed.position.stopLossPct,
+        buyRuleVersionId: closed.position.buyRuleId,
+        sellRuleVersionId: closed.position.sellRuleId,
+        avgCost: closed.position.avgCost,
+        qty: closed.position.quantity,
+        openedAt: closed.position.openedAt,
+        closedAt: closed.at,
+      };
+      await store.upsertPosition(record);
+    }
+    for (const leg of state.pendingLegs ?? []) {
+      const trade: TradeRecord = {
+        id: leg.id,
+        positionId: leg.positionId,
+        ruleVersionId: leg.ruleVersionId,
+        side: leg.side,
+        qty: leg.qty,
+        limitPrice: leg.limitPrice,
+        fillPrice: leg.fillPrice,
+        session: leg.session,
+        bidAtOrder: leg.bidAtOrder,
+        askAtOrder: leg.askAtOrder,
+        capitalSnapshot: leg.capitalSnapshot,
+        sizeReason: leg.sizeReason,
+        exitReason: leg.exitReason,
+        status: leg.status,
+        createdAt: leg.createdAt,
+        signals: leg.signals,
+      };
+      await store.insertTrade(trade);
+    }
+    for (const closed of state.closedThisCycle ?? []) {
+      const existing = await store.getReview(closed.position.id);
+      if (existing) continue;
+      const trades = await store.listTrades(closed.position.id);
+      const marks = await store.listPriceMarks(closed.position.id);
+      const record = (await store.getPosition(closed.position.id))!;
+      const review = buildPositionReview({
+        position: record,
+        trades,
+        marks,
+        exitType: closed.exitType,
+        exitPrice: closed.exitPrice,
+        now: closed.at,
+        sessionAtEntry: trades.find((item) => item.side === "buy")?.session,
+      });
+      await store.insertReview(review);
+    }
+    const leftover = (await store.listPositions("sim", "open")).filter((row) => !openIds.has(row.id));
+    for (const row of leftover) {
+      if ((state.closedThisCycle ?? []).some((item) => item.position.id === row.id)) continue;
+      await store.upsertPosition({ ...row, status: "closed", closedAt: Date.now() });
+    }
+    const barRows = Object.entries(state.bars).flatMap(([symbol, bars]) => bars.map((bar) => ({ symbol, ...bar })));
+    await store.saveBars(barRows);
+    await store.replaceWorkingOrders(state.orders);
+    await store.replaceProposals(state.proposals);
+    await store.setSelectedRuleIds(state.selectedRuleIds);
+  }
+
+  /** Live submits stay off unless the gate is armed. Off-hours, never send a broker stop. */
+  private async proposeLiveEntries(quotes: QuoteView[], now: Date): Promise<void> {
+    if (this.env.ALLOW_LIVE_TRADING !== "1") return;
+    if (marketSession(now) !== "regular") {
+      await this.audit("live_skipped", { reason: "off_hours_live_not_armed" });
+      return;
+    }
     const settings = await this.settings();
     const top10 = (await this.env.DB.prepare("SELECT symbol FROM top10 ORDER BY rank").all<{ symbol: string }>()).results.map((row) => row.symbol);
-    const held = (await this.env.DB.prepare("SELECT symbol, quantity, avg_cost, opened_on FROM sim_positions").all<PositionRow>()).results;
-    const working = (await this.env.DB.prepare("SELECT symbol FROM sim_orders WHERE status = 'working'").all<{ symbol: string }>()).results.map((row) => row.symbol);
-    const trades = (await this.env.DB.prepare("SELECT symbol, day FROM day_trades").all<{ symbol: string; day: string }>()).results;
+    const rules = await (await this.store()).currentRules();
+    const hasProvenBuyRule = rules.some((rule) => rule.side === "buy" && rule.status === "proven");
     const refs = (await this.env.DB.prepare("SELECT ref_id FROM proposals").all<{ ref_id: string }>()).results.map((row) => row.ref_id);
-    const equity = this.equity(settings.cash, held, quotes);
+    // Live orders must not use simulator positions or cash.
     for (const symbol of top10) {
-      if (held.some((position) => position.symbol === symbol && position.quantity > 0)) continue;
       const refId = crypto.randomUUID();
       const quote = quotes.find((item) => item.symbol === symbol);
       const guard: GuardContext = {
-        now: new Date(),
+        now,
         mode: settings.mode,
         killed: settings.killed === 1,
         top10,
-        held: held.map((position) => ({ symbol: position.symbol, quantity: position.quantity, openedOn: position.opened_on })),
-        equity,
-        buyingPower: settings.cash,
-        dayStartEquity: settings.day_start_equity,
+        held: [],
+        equity: 0,
+        buyingPower: 0,
+        dayStartEquity: 0,
         profitTargetPct: settings.profit_target_pct,
         stopLossPct: settings.stop_loss_pct,
-        maxOrderPct: settings.max_order_pct,
         dailyLossPct: settings.daily_loss_pct,
-        dayTrades: trades,
-        pdtLimit: settings.pdt_limit,
-        quote: quote ? { symbol: quote.symbol, bid: quote.bid, ask: quote.ask, last: quote.last, tradable: quote.tradable } : undefined,
-        workingSymbols: working,
+        orderCap: settings.order_cap ?? 100,
+        ordersToday: 0,
+        quote: quote ? { symbol: quote.symbol, bid: quote.bid, ask: quote.ask, last: quote.last, tradable: quote.tradable, hasBidAsk: quote.hasBidAsk, asOf: quote.asOf } : undefined,
+        quoteSource: "robinhood",
+        workingSymbols: [],
         usedRefIds: refs,
         agenticAllowed: true,
         symbol,
         refId,
+        audience: "live",
+        hasProvenBuyRule,
       };
       const verdict = validateNewBuy(guard);
-      const recent = await this.env.DB.prepare("SELECT verdict, created_at FROM proposals WHERE symbol = ? ORDER BY created_at DESC LIMIT 1").bind(symbol).first<{ verdict: string; created_at: number }>();
-      const duplicate = recent && recent.verdict === verdict.code && Date.now() - recent.created_at < 30 * 60 * 1000;
-      if (!duplicate) {
-        await this.env.DB.prepare("INSERT INTO proposals (id, ref_id, symbol, verdict, message, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), refId, symbol, verdict.code, verdict.message, JSON.stringify(verdict.bundle?.entry ?? null), Date.now()).run();
-      }
-      if (!verdict.ok || !verdict.bundle) continue;
-      const bundle = verdict.bundle;
-      if (this.env.ALLOW_LIVE_TRADING === "1") {
-        const token = await this.accessToken();
-        const accountNumber = token ? await this.agenticAccountNumber(token) : undefined;
-        if (!token || !accountNumber) {
-          await this.audit("live_skipped", { reason: "not_connected" });
-          continue;
-        }
-        bundle.entry.account_number = accountNumber;
-        bundle.stop.account_number = accountNumber;
-        const review = { ...bundle.entry };
-        delete review.ref_id;
-        try {
-          await submitGatedTool({ allowLive: this.env.ALLOW_LIVE_TRADING, tool: "review_equity_order", args: review, send: (tool, args) => this.mcpCall(token, tool, args) });
-          await submitGatedTool({ allowLive: this.env.ALLOW_LIVE_TRADING, tool: "place_equity_order", args: bundle.entry, send: (tool, args) => this.mcpCall(token, tool, args) });
-          await submitGatedTool({ allowLive: this.env.ALLOW_LIVE_TRADING, tool: "place_equity_order", args: bundle.stop, send: (tool, args) => this.mcpCall(token, tool, args) });
-        } catch (error) {
-          await this.audit("live_failed", { message: error instanceof Error ? error.name : "live_failed" });
-        }
+      if (!verdict.ok || !verdict.bundle || verdict.bundle.stopKind !== "broker") continue;
+      const token = await this.accessToken();
+      const accountNumber = token ? await this.agenticAccountNumber(token) : undefined;
+      if (!token || !accountNumber) {
+        await this.audit("live_skipped", { reason: "not_connected" });
         continue;
       }
-      await this.fillEntry(symbol, bundle.quantity, Number(bundle.entry.limit_price), Number(bundle.stop.stop_price), Number(bundle.takeProfit.limit_price), refId);
+      const bundle = verdict.bundle;
+      bundle.entry.account_number = accountNumber;
+      bundle.stop.account_number = accountNumber;
+      const review = { ...bundle.entry };
+      delete review.ref_id;
+      try {
+        await submitGatedTool({ allowLive: this.env.ALLOW_LIVE_TRADING, tool: "review_equity_order", args: review, send: (tool, args) => this.mcpCall(token, tool, args) });
+        await submitGatedTool({ allowLive: this.env.ALLOW_LIVE_TRADING, tool: "place_equity_order", args: bundle.entry, send: (tool, args) => this.mcpCall(token, tool, args) });
+        await submitGatedTool({ allowLive: this.env.ALLOW_LIVE_TRADING, tool: "place_equity_order", args: bundle.stop, send: (tool, args) => this.mcpCall(token, tool, args) });
+      } catch (error) {
+        await this.audit("live_failed", { message: error instanceof Error ? error.name : "live_failed" });
+      }
     }
-  }
-
-  private async fillEntry(symbol: string, quantity: number, price: number, stop: number, target: number, refId: string): Promise<void> {
-    const settings = await this.settings();
-    const cost = roundMoney(quantity * price);
-    if (cost > settings.cash) return;
-    const today = etParts(new Date()).date;
-    await this.env.DB.prepare("UPDATE app_settings SET cash = ? WHERE id = 1").bind(roundMoney(settings.cash - cost)).run();
-    const existing = await this.env.DB.prepare("SELECT quantity, avg_cost FROM sim_positions WHERE symbol = ?").bind(symbol).first<{ quantity: number; avg_cost: number }>();
-    if (existing) {
-      const totalQty = existing.quantity + quantity;
-      const avg = roundMoney((existing.quantity * existing.avg_cost + cost) / totalQty);
-      await this.env.DB.prepare("UPDATE sim_positions SET quantity = ?, avg_cost = ? WHERE symbol = ?").bind(totalQty, avg, symbol).run();
-    } else {
-      await this.env.DB.prepare("INSERT INTO sim_positions (symbol, quantity, avg_cost, opened_on) VALUES (?, ?, ?, ?)").bind(symbol, quantity, price, today).run();
-    }
-    const now = Date.now();
-    await this.insertOrder({ id: crypto.randomUUID(), refId, symbol, side: "buy", type: "limit", quantity, limit: price, stop: null, status: "filled", role: "entry", openedOn: today, now });
-    await this.insertOrder({ id: crypto.randomUUID(), refId: `${refId}-stop`, symbol, side: "sell", type: "stop_market", quantity, limit: null, stop, status: "working", role: "stop", openedOn: today, now });
-    await this.insertOrder({ id: crypto.randomUUID(), refId: `${refId}-target`, symbol, side: "sell", type: "limit", quantity, limit: target, stop: null, status: "working", role: "target", openedOn: today, now });
-  }
-
-  private async manageExits(quotes: QuoteView[]): Promise<void> {
-    const positions = (await this.env.DB.prepare("SELECT symbol, quantity, avg_cost, opened_on FROM sim_positions").all<PositionRow>()).results;
-    for (const position of positions) {
-      const quote = quotes.find((item) => item.symbol === position.symbol);
-      if (!quote) continue;
-      const stop = await this.env.DB.prepare("SELECT id, stop_price, quantity FROM sim_orders WHERE symbol = ? AND role = 'stop' AND status = 'working'").bind(position.symbol).first<{ id: string; stop_price: number; quantity: number }>();
-      const target = await this.env.DB.prepare("SELECT id, limit_price, quantity FROM sim_orders WHERE symbol = ? AND role = 'target' AND status = 'working'").bind(position.symbol).first<{ id: string; limit_price: number; quantity: number }>();
-      const hitStop = stop && quote.last <= stop.stop_price;
-      const hitTarget = target && quote.last >= target.limit_price;
-      if (!hitStop && !hitTarget) continue;
-      const exit = validateExit({ now: new Date(), killed: false, quantity: position.quantity, bid: quote.bid, kind: hitStop ? "stop" : "target" });
-      if (!exit.ok) continue;
-      const price = hitStop ? quote.bid : Number(target?.limit_price);
-      await this.closePosition(position, price, hitStop ? "stop" : "target");
-    }
-  }
-
-  private async closePosition(position: PositionRow, price: number, role: "stop" | "target"): Promise<void> {
-    const settings = await this.settings();
-    const proceeds = roundMoney(position.quantity * price);
-    await this.env.DB.prepare("UPDATE app_settings SET cash = ? WHERE id = 1").bind(roundMoney(settings.cash + proceeds)).run();
-    await this.env.DB.prepare("DELETE FROM sim_positions WHERE symbol = ?").bind(position.symbol).run();
-    await this.env.DB.prepare("UPDATE sim_orders SET status = 'cancelled' WHERE symbol = ? AND status = 'working' AND role IN ('stop', 'target')").bind(position.symbol).run();
-    const today = etParts(new Date()).date;
-    await this.insertOrder({ id: crypto.randomUUID(), refId: crypto.randomUUID(), symbol: position.symbol, side: "sell", type: role === "stop" ? "stop_market" : "limit", quantity: position.quantity, limit: role === "target" ? price : null, stop: role === "stop" ? price : null, status: "filled", role, openedOn: position.opened_on, now: Date.now() });
-    if (position.opened_on === today) {
-      await this.env.DB.prepare("INSERT INTO day_trades (id, symbol, day) VALUES (?, ?, ?)").bind(crypto.randomUUID(), position.symbol, today).run();
-    }
-  }
-
-  private async insertOrder(order: { id: string; refId: string; symbol: string; side: string; type: string; quantity: number; limit: number | null; stop: number | null; status: string; role: string; openedOn: string; now: number }): Promise<void> {
-    await this.env.DB.prepare("INSERT INTO sim_orders (id, ref_id, symbol, side, type, quantity, limit_price, stop_price, status, role, opened_on, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(order.id, order.refId, order.symbol, order.side, order.type, order.quantity, order.limit, order.stop, order.status, order.role, order.openedOn, order.now).run();
-  }
-
-  private async rollDay(quotes: QuoteView[]): Promise<void> {
-    const settings = await this.settings();
-    const today = etParts(new Date()).date;
-    if (settings.day_start_date === today) return;
-    const held = (await this.env.DB.prepare("SELECT symbol, quantity, avg_cost, opened_on FROM sim_positions").all<PositionRow>()).results;
-    const equity = this.equity(settings.cash, held, quotes);
-    await this.env.DB.prepare("UPDATE app_settings SET day_start_equity = ?, day_start_date = ? WHERE id = 1").bind(equity, today).run();
-  }
-
-  private equity(cash: number, positions: PositionRow[], quotes: QuoteView[]): number {
-    const market = positions.reduce((sum, position) => {
-      const quote = quotes.find((item) => item.symbol === position.symbol);
-      return sum + position.quantity * (quote?.last ?? position.avg_cost);
-    }, 0);
-    return roundMoney(cash + market);
   }
 
   private async buildSummary(book: { quotes: QuoteView[]; source: "recorded" | "robinhood" }): Promise<Summary> {
     const settings = await this.settings();
     const top10 = (await this.env.DB.prepare("SELECT symbol FROM top10 ORDER BY rank").all<{ symbol: string }>()).results.map((row) => row.symbol);
-    const positions = (await this.env.DB.prepare("SELECT symbol, quantity, avg_cost, opened_on FROM sim_positions").all<PositionRow>()).results;
-    const orders = (await this.env.DB.prepare("SELECT id, ref_id, symbol, side, type, quantity, limit_price, stop_price, status, role, opened_on FROM sim_orders ORDER BY created_at DESC LIMIT 12").all<OrderRow>()).results;
-    const trades = (await this.env.DB.prepare("SELECT symbol, day FROM day_trades").all<{ symbol: string; day: string }>()).results;
-    const proposals = (await this.env.DB.prepare("SELECT symbol, verdict, message, created_at FROM proposals ORDER BY created_at DESC LIMIT 10").all<{ symbol: string; verdict: string; message: string; created_at: number }>()).results;
-    const equity = this.equity(settings.cash, positions, book.quotes);
     const now = new Date();
     const parts = etParts(now);
     this.robinhoodError = undefined;
@@ -385,42 +591,15 @@ export class AccountTrader extends DurableObject<Env> {
       robinhoodStatus,
       ...(robinhoodStatus === "error" ? { robinhoodError: this.robinhoodError ?? "Robinhood sign-in expired or was revoked. Connect again from Settings." } : {}),
       robinhood,
-      simulator: {
-        maskedAccount: maskAccountNumber(settings.account_number),
-        cash: formatUsd(settings.cash),
-        equity: formatUsd(equity),
-        dailyLoss: formatUsd(dailyLossAmount(equity, settings.day_start_equity)),
-        dailyLossCap: formatUsd(roundMoney(settings.day_start_equity * (settings.daily_loss_pct / 100))),
-        dayTrades: dayTradeCount(trades, parts.date),
-        pdtLimit: settings.pdt_limit,
-        positions: positions.map((position) => {
-          const last = book.quotes.find((quote) => quote.symbol === position.symbol)?.last ?? position.avg_cost;
-          const pnl = roundMoney((last - position.avg_cost) * position.quantity);
-          return {
-            symbol: position.symbol,
-            quantity: formatShares(position.quantity),
-            avgCost: formatUsd(position.avg_cost),
-            last: formatUsd(last),
-            marketValue: formatUsd(roundMoney(last * position.quantity)),
-            pnl: formatUsd(pnl),
-          };
-        }),
-        orders: orders.map((order) => ({
-          symbol: order.symbol,
-          side: order.side,
-          type: order.type,
-          quantity: formatShares(order.quantity),
-          status: order.status,
-          role: order.role,
-          price: formatUsd(order.limit_price ?? order.stop_price ?? 0),
-        })),
-      },
       settings: {
         profitTargetPct: settings.profit_target_pct,
         stopLossPct: settings.stop_loss_pct,
-        maxOrderPct: settings.max_order_pct,
         dailyLossPct: settings.daily_loss_pct,
+        orderCap: settings.order_cap ?? 100,
+        tradingCapital: settings.trading_capital ?? 0,
       },
+      tradingCapital: await this.tradingCapitalView(settings.trading_capital ?? 0, robinhood, book.quotes, "live"),
+      positions: await this.positionViews("live", book.quotes),
       top10: top10.map((symbol) => {
         const quote = book.quotes.find((item) => item.symbol === symbol);
         return {
@@ -431,11 +610,306 @@ export class AccountTrader extends DurableObject<Env> {
           tradable: quote?.tradable ?? false,
         };
       }),
-      proposals: proposals.map((proposal) => ({ symbol: proposal.symbol, verdict: proposal.verdict, message: proposal.message, at: proposal.created_at })),
     };
   }
 
+  private async buildSimulator(book: { quotes: QuoteView[]; source: "recorded" | "robinhood" }, events: SimEvent[] = []): Promise<SimulatorView> {
+    const state = await this.loadSim();
+    const now = new Date();
+    const parts = etParts(now);
+    const equity = equityOf(state, book.quotes);
+    return {
+      cash: formatUsd(state.cash),
+      equity: formatUsd(equity),
+      dailyLoss: formatUsd(dailyLossAmount(equity, state.dayStartEquity)),
+      dailyLossCap: formatUsd(roundMoney((effectiveTradingCapital(state.tradingCapital, equity).capital) * (state.dailyLossPct / 100))),
+      ordersToday: ordersToday(state, now),
+      orderCap: state.orderCap,
+      killed: state.killed,
+      session: marketSession(now),
+      clock: `${parts.date} ${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")} ET`,
+      quoteSource: book.source,
+      selectedRuleIds: state.selectedRuleIds,
+      tradingCapital: await this.tradingCapitalView(state.tradingCapital, undefined, book.quotes, "sim", equity),
+      positions: await this.positionViews("sim", book.quotes),
+      orders: state.orders.slice(-20).reverse().map((order) => ({
+        symbol: order.symbol,
+        side: order.side,
+        type: order.type,
+        quantity: formatShares(order.quantity),
+        status: order.status,
+        role: order.role,
+        price: formatUsd(order.limit ?? order.stop ?? 0),
+      })),
+      trades: state.trades.slice(-20).reverse().map((trade) => ({
+        symbol: trade.symbol,
+        quantity: formatShares(trade.quantity),
+        entry: formatUsd(trade.entryPrice),
+        exit: formatUsd(trade.exitPrice),
+        pnl: formatUsd(trade.pnl),
+        reason: trade.reason,
+        at: trade.closedAt,
+      })),
+      events: events.map((event) => ({ action: event.action, detail: JSON.stringify(event.detail) })),
+      proposals: state.proposals.slice(-12).reverse().map((proposal) => ({ symbol: proposal.symbol, verdict: proposal.verdict, message: proposal.message, at: proposal.createdAt })),
+    };
+  }
+
+  private async ruleViews(): Promise<RuleView[]> {
+    const rules = await (await this.store()).currentRules();
+    const cards = await (await this.store()).ruleScorecards(rules);
+    return rules.map((rule) => ({
+      id: rule.id,
+      familyId: rule.familyId,
+      name: rule.name,
+      side: rule.side,
+      body: rule.body,
+      signals: rule.signals,
+      status: rule.status,
+      version: rule.version,
+      createdAt: rule.createdAt,
+      updatedAt: rule.updatedAt,
+      scorecard: cards.get(rule.familyId) ?? { tradeCount: 0, winRate: null, avgProfit: null, worstLoss: null },
+    }));
+  }
+
   private robinhoodError: string | undefined;
+
+
+  async editPositionCapital(id: string, amount: number, confirm: boolean): Promise<{ ok: true }> {
+    await this.seed();
+    if (!confirm) throw new Error("Confirm the capital change for this position.");
+    if (!validTradingCapital(amount)) throw new Error("Trading capital must be a positive dollar amount.");
+    const store = await this.store();
+    const position = await store.getPosition(id);
+    if (!position || position.status !== "open") throw new Error("That open position was not found.");
+    const oldValue = position.tradingCapitalSnapshot;
+    await store.upsertPosition({ ...position, tradingCapitalSnapshot: amount });
+    await store.insertCapitalHistory({ id: crypto.randomUUID(), positionId: id, oldValue, newValue: amount, at: Date.now() });
+    await this.audit("position_capital", { id, oldValue, newValue: amount });
+    return { ok: true };
+  }
+
+  async editPositionExits(id: string, input: { profitTargetPct?: number; stopLossPct?: number }): Promise<{ ok: true }> {
+    await this.seed();
+    const store = await this.store();
+    const position = await store.getPosition(id);
+    if (!position || position.status !== "open") throw new Error("That open position was not found.");
+    const now = Date.now();
+    const next = { ...position };
+    if (input.profitTargetPct != null) {
+      if (!validExitPct(input.profitTargetPct)) throw new Error("Profit target must be a positive percent no greater than 100.");
+      await store.insertExitSettingsHistory({ id: crypto.randomUUID(), positionId: id, field: "profit_target_pct", oldValue: position.profitTargetPct, newValue: input.profitTargetPct, at: now });
+      next.profitTargetPct = input.profitTargetPct;
+    }
+    if (input.stopLossPct != null) {
+      if (!validExitPct(input.stopLossPct)) throw new Error("Stop-loss must be a positive percent no greater than 100.");
+      await store.insertExitSettingsHistory({ id: crypto.randomUUID(), positionId: id, field: "stop_loss_pct", oldValue: position.stopLossPct, newValue: input.stopLossPct, at: now });
+      next.stopLossPct = input.stopLossPct;
+    }
+    await store.upsertPosition(next);
+    await this.audit("position_exits", { id, ...input });
+    return { ok: true };
+  }
+
+  async reviewScreen(filters: ReviewFilters): Promise<ReviewScreen> {
+    await this.seed();
+    const store = await this.store();
+    await this.maybeComputeScores();
+    const reviews = await store.listReviews(filters);
+    const ruleScores = await store.latestRuleScoreSnapshots(filters.mode);
+    const signalScores = await store.latestSignalScoreSnapshots(filters.mode);
+    const rules = await store.currentRules();
+    const signals = await store.listSignals();
+    const nameOf = (id?: string) => rules.find((rule) => rule.id === id || rule.familyId === id)?.name;
+    const signalName = (id: string) => signals.find((item) => item.id === id)?.name ?? id;
+    const ranked = [...signalScores].sort((a, b) => (b.avgPnlTrue ?? 0) - (a.avgPnlTrue ?? 0));
+    return {
+      reviews: reviews.map((row) => ({
+        positionId: row.positionId,
+        symbol: row.symbol,
+        mode: row.mode,
+        closedAt: row.closedAt ?? row.createdAt,
+        pnl: formatUsd(row.pnlDollars),
+        pnlPct: `${row.pnlPct.toFixed(2)}%`,
+        holdMinutes: row.holdMinutes,
+        exitType: row.exitType,
+        session: row.sessionAtEntry ?? "",
+        addsCount: row.addsCount,
+        addsHelped: row.addsHelped,
+        botNote: row.botNote,
+        userNote: row.userNote ?? "",
+        buyRule: row.buyRuleName,
+        sellRule: row.sellRuleName,
+      })),
+      ruleScores: ruleScores.map((row) => ({
+        rule: nameOf(row.ruleVersionId) ?? nameOf(row.ruleId) ?? row.ruleId ?? "Rule",
+        mode: row.mode,
+        trades: row.trades,
+        winRate: row.winRate,
+        avgPnlPct: row.avgPnlPct,
+        worstLoss: row.worstLoss,
+        netAfterCosts: row.netAfterCosts,
+      })),
+      bestSignals: ranked.filter((row) => (row.sampleTrue ?? 0) > 0 && (row.avgPnlTrue ?? 0) >= 0).slice(0, 5).map((row) => ({
+        name: signalName(row.signalId), id: row.signalId, winRate: row.winRateTrue, avgPnl: row.avgPnlTrue, sample: row.sampleTrue,
+      })),
+      worstSignals: [...ranked].reverse().filter((row) => (row.sampleTrue ?? 0) > 0).slice(0, 5).map((row) => ({
+        name: signalName(row.signalId), id: row.signalId, winRate: row.winRateTrue, avgPnl: row.avgPnlTrue, sample: row.sampleTrue,
+      })),
+    };
+  }
+
+  async updateReviewNote(positionId: string, userNote: string): Promise<void> {
+    await this.seed();
+    await (await this.store()).updateReviewNote(positionId, userNote);
+    await this.audit("review_note", { positionId });
+  }
+
+  private async positionViews(mode: "live" | "sim", quotes: QuoteView[]): Promise<PositionView[]> {
+    const store = await this.store();
+    const positions = await store.listPositions(mode, "open");
+    const versions = await store.listRuleVersions();
+    const byId = new Map(versions.map((rule) => [rule.id, rule]));
+    const out: PositionView[] = [];
+    for (const position of positions) {
+      const last = quotes.find((quote) => quote.symbol === position.symbol)?.last ?? position.avgCost;
+      const trades = await store.listTrades(position.id);
+      const buy = position.buyRuleVersionId ? byId.get(position.buyRuleVersionId) : undefined;
+      const sell = position.sellRuleVersionId ? byId.get(position.sellRuleVersionId) : undefined;
+      out.push({
+        id: position.id,
+        symbol: position.symbol,
+        mode: position.mode,
+        status: position.status,
+        quantity: formatShares(position.qty),
+        avgCost: formatUsd(position.avgCost),
+        last: formatUsd(last),
+        marketValue: formatUsd(roundMoney(last * position.qty)),
+        pnl: formatUsd(roundMoney((last - position.avgCost) * position.qty)),
+        tradingCapital: formatUsd(position.tradingCapitalSnapshot),
+        profitTargetPct: position.profitTargetPct,
+        stopLossPct: position.stopLossPct,
+        buyRule: buy ? `${buy.name} v${buy.version}` : undefined,
+        sellRule: sell ? `${sell.name} v${sell.version}` : undefined,
+        trades: trades.map((trade) => ({
+          id: trade.id,
+          side: trade.side,
+          quantity: formatShares(trade.qty),
+          price: formatUsd(trade.fillPrice ?? trade.limitPrice ?? 0),
+          status: trade.status,
+          session: trade.session,
+          sizeReason: trade.sizeReason,
+          exitReason: trade.exitReason,
+          at: trade.createdAt,
+        })),
+      });
+    }
+    return out;
+  }
+
+  private async tradingCapitalView(saved: number, robinhood: Summary["robinhood"] | undefined, quotes: QuoteView[], mode: "live" | "sim", simEquity?: number) {
+    const store = await this.store();
+    let balance = simEquity ?? 0;
+    if (mode === "live") {
+      const raw = robinhood?.totalValue ? Number(String(robinhood.totalValue).replace(/[^0-9.-]/g, "")) : NaN;
+      balance = Number.isFinite(raw) && raw > 0 ? raw : balance;
+    }
+    if (!(balance > 0)) {
+      const settings = await store.getSettings();
+      balance = settings?.cash ?? 0;
+    }
+    const effective = effectiveTradingCapital(saved, balance);
+    const open = await store.listPositions(mode, "open");
+    const exposure = openExposure(open.map((position) => {
+      const last = quotes.find((quote) => quote.symbol === position.symbol)?.last;
+      return { qty: position.qty, avgCost: position.avgCost, last };
+    }));
+    return {
+      saved,
+      savedUsd: formatUsd(saved),
+      balance,
+      balanceUsd: formatUsd(balance),
+      effective: effective.capital,
+      effectiveUsd: formatUsd(effective.capital),
+      warn: effective.warn,
+      exposure,
+      exposureUsd: formatUsd(exposure),
+      paused: exposure >= effective.capital && effective.capital > 0,
+      presets: tradingCapitalPresets(balance),
+    };
+  }
+
+  private async maybeComputeScores(): Promise<void> {
+    const store = await this.store();
+    const last = await store.lastScoreSnapshotEnd();
+    const now = Date.now();
+    const day = 24 * 60 * 60 * 1000;
+    const periodEnd = now;
+    const periodStart = now - day;
+    if (last && now - last < day) return;
+    await this.computeScores(periodStart, periodEnd);
+  }
+
+  private async computeScores(periodStart: number, periodEnd: number): Promise<void> {
+    const store = await this.store();
+    const computedAt = Date.now();
+    for (const mode of ["sim", "live"] as const) {
+      const reviews = await store.listReviews({ mode, from: periodStart, to: periodEnd });
+      const rules = await store.currentRules();
+      const byRule = new Map<string, { pnl: number[] }>();
+      for (const review of reviews) {
+        for (const name of [review.buyRuleName, review.sellRuleName]) {
+          if (!name) continue;
+          const rule = rules.find((item) => item.name === name);
+          const key = rule?.familyId ?? name;
+          const list = byRule.get(key) ?? { pnl: [] };
+          list.pnl.push(review.pnlDollars);
+          byRule.set(key, list);
+        }
+      }
+      const ruleRows = [];
+      for (const rule of rules) {
+        const list = byRule.get(rule.familyId)?.pnl ?? [];
+        const wins = list.filter((item) => item > 0);
+        ruleRows.push({
+          id: crypto.randomUUID(),
+          periodStart, periodEnd, mode,
+          ruleId: rule.familyId,
+          ruleVersionId: rule.id,
+          trades: list.length,
+          winRate: list.length ? wins.length / list.length : null,
+          avgPnlPct: reviews.length ? reviews.filter((item) => item.buyRuleName === rule.name || item.sellRuleName === rule.name).reduce((sum, item) => sum + item.pnlPct, 0) / Math.max(1, list.length) : null,
+          worstLoss: list.length ? Math.min(0, ...list) : null,
+          netAfterCosts: list.length ? list.reduce((sum, item) => sum + item, 0) : null,
+          computedAt,
+        });
+      }
+      await store.saveRuleScoreSnapshots(ruleRows);
+      const signals = await store.listSignals();
+      const signalRows = [];
+      for (const signal of signals) {
+        const truePnl: number[] = [];
+        const falsePnl: number[] = [];
+        for (const review of reviews) {
+          const trades = await store.listTrades(review.positionId);
+          const fired = trades.some((trade) => trade.signals?.some((item) => item.id === signal.id && item.fired));
+          const seen = trades.some((trade) => trade.signals?.some((item) => item.id === signal.id));
+          if (!seen) continue;
+          (fired ? truePnl : falsePnl).push(review.pnlDollars);
+        }
+        const avg = (list: number[]) => list.length ? list.reduce((sum, item) => sum + item, 0) / list.length : null;
+        const win = (list: number[]) => list.length ? list.filter((item) => item > 0).length / list.length : null;
+        signalRows.push({
+          id: crypto.randomUUID(), periodStart, periodEnd, mode, signalId: signal.id,
+          winRateTrue: win(truePnl), avgPnlTrue: avg(truePnl), sampleTrue: truePnl.length,
+          winRateFalse: win(falsePnl), avgPnlFalse: avg(falsePnl), sampleFalse: falsePnl.length,
+          computedAt,
+        });
+      }
+      await store.saveSignalScoreSnapshots(signalRows);
+    }
+  }
 
   async disconnect(): Promise<Summary> {
     await this.env.DB.prepare("DELETE FROM rh_tokens WHERE id = 1").run();

@@ -28,11 +28,9 @@ if (viewOnly.includes("SIM0000999")) throw new Error("full simulator account num
 await page.click("a[href='/top10']");
 await page.waitForFunction(() => document.body.innerText.includes("AAPL"));
 await page.evaluate(() => {
-  const button = [...document.querySelectorAll("button")].find((item) => item.textContent === "Run check");
+  const button = [...document.querySelectorAll("button")].find((item) => item.textContent === "Save list");
   button?.click();
 });
-await page.evaluate(() => document.querySelector("a[href='/']")?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })));
-await page.waitForFunction(() => /regular hours|The order was checked and not sent/.test(document.body.innerText));
 await page.evaluate(() => document.querySelector("a[href='/settings']")?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })));
 await page.waitForFunction(() => document.body.innerText.includes("Switch to Live"));
 await page.evaluate(() => {
@@ -55,10 +53,15 @@ await page.evaluate(() => {
 });
 await page.waitForFunction(() => !document.body.innerText.includes("Confirm with your passkey") && document.querySelector("input")?.value === "1.5");
 await page.evaluate(() => {
-  const button = [...document.querySelectorAll("button")].find((item) => item.textContent === "Kill switch");
+  const button = [...document.querySelectorAll("button")].find((item) => item.textContent === "Sell All Positions");
   button?.click();
 });
-await page.waitForFunction(() => document.body.innerText.includes("Kill switch is on"));
+await page.waitForFunction(() => document.body.innerText.includes("Confirm sell all"));
+await page.evaluate(() => {
+  const button = [...document.querySelectorAll("button")].find((item) => item.textContent === "Confirm sell all");
+  button?.click();
+});
+await page.waitForFunction(() => document.body.innerText.includes("Sell All Positions is on") || document.body.innerText.includes("New buys stopped"));
 const finalText = await page.evaluate(() => document.body.innerText);
 if (finalText.includes("544784028") || finalText.includes("5UD70362")) throw new Error("real account number rendered");
 console.log("browser check ok");

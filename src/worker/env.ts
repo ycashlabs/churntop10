@@ -1,5 +1,5 @@
 export interface Env {
-  ASSETS: Fetcher;
+  ASSETS?: Fetcher;
   DB: D1Database;
   AUDIT: R2Bucket;
   TRADER: DurableObjectNamespace;

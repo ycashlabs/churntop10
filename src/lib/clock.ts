@@ -95,3 +95,5 @@ export function businessDaysAgo(day: string, days: number): string {
   const found = recentBusinessDays(day, days + 1);
   return found[days] ?? day;
 }
+
+export const SESSION_HELP = "Buys run 24/5, Sunday 8:00 PM through Friday 8:00 PM ET. Outside regular hours, entries and exits are limit orders only. The app watches the stop-loss every 5 minutes and sends a limit sell if the price is at or below the stop. That is not a resting broker stop, so a move between checks can go through the stop before a sell is sent.";

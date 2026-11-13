@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "npm run build:client && wrangler d1 migrations apply DB --local && wrangler dev --port 8787",
-    "build:client": "vite build",
+    "dev": "npm run build:client && wrangler d1 migrations apply DB --local && wrangler dev --port 8787 --ip 127.0.0.1",
+    "build:client": "vite build && node scripts/embed-assets.mjs",
     "build:worker": "node scripts/bundle-worker.mjs",
     "build": "npm run build:client && npm run build:worker",
     "lint": "eslint .",
