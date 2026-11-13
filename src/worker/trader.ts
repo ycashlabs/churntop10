@@ -12,6 +12,7 @@ import { assertOutgoing } from "../lib/requests.js";
 import { applyOrderFill, labelBuyRule, recordsForPlacedLiveBuy, reconcileLiveHoldings, shouldComputeScores, type BrokerHolding } from "../lib/holdings.js";
 import { equityOf, ordersToday, runSimulatorCycle, sellAllSimPositions, type SimEvent, type SimState } from "../lib/simulator.js";
 import { allRequiredSignalsFired, computeSignals, type SignalResult } from "../lib/signals.js";
+import { PROPOSAL_CAP } from "../lib/sim-persist.js";
 import { dailyLossAmount, validExitPct, validateNewBuy, type GuardContext } from "../lib/validator.js";
 import type { RuleSide, RuleStatus } from "../lib/rules.js";
 import type { SimulatorView, RuleView, RuleHistoryView, PositionView, ReviewScreen } from "../lib/api-types.js";
@@ -546,7 +547,7 @@ export class AccountTrader extends DurableObject<Env> {
     const barRows = Object.entries(state.bars).flatMap(([symbol, bars]) => bars.map((bar) => ({ symbol, ...bar })));
     await store.saveBars(barRows);
     await store.replaceWorkingOrders(state.orders);
-    await store.replaceProposals(state.proposals);
+    await store.replaceProposals(state.proposals.slice(-PROPOSAL_CAP));
     await store.setSelectedRuleIds(state.selectedRuleIds);
   }
 
@@ -737,7 +738,7 @@ export class AccountTrader extends DurableObject<Env> {
         at: trade.closedAt,
       })),
       events: events.map((event) => ({ action: event.action, detail: JSON.stringify(event.detail) })),
-      proposals: state.proposals.slice(-12).reverse().map((proposal) => ({ symbol: proposal.symbol, verdict: proposal.verdict, message: proposal.message, at: proposal.createdAt })),
+      proposals: state.proposals.slice(-PROPOSAL_CAP).reverse().map((proposal) => ({ symbol: proposal.symbol, verdict: proposal.verdict, message: proposal.message, at: proposal.createdAt })),
     };
   }
 

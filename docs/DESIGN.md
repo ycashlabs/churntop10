@@ -253,7 +253,7 @@ All strings below are **verbatim** from `src/client/App.tsx` and `SESSION_HELP` 
 ### 6.1 Document and chrome
 
 - HTML title / `h1`: `Churn Top 10`
-- Loading (no session yet): `Loading…`
+- Loading (no session yet): `Loading…`. If the session request fails, keep `Loading…` and also show the error in the same error style as the account-loading screen. The message is the API `error` field when the response body has one, otherwise `Request failed.` (from `api()`), or `Could not load.` if the failure has no message.
 - Loading (authenticated, summary not in yet): `Loading the account…`
 - Generic load failure: `Could not load.`
 - Generic action failure: `Request failed.`
@@ -535,6 +535,25 @@ Before this change, the prod NVDA simulator fills at 7:55 AM CST and 8:00 AM CST
 
 ---
 
+### 8.5 Simulator persistence and D1 write reduction (built)
+
+`saveSim` used to `DELETE` then re-`INSERT` every `quote_bars`, `proposals`, `sim_orders`, and `sim_selected_rules` row on every 5-minute tick, and always upserted every open position, inserted a `price_marks` row, and `UPDATE`d `app_settings`. On a mid-day book that became hundreds of D1 write statements per tick (and, on a long-running dev book, approached the per-invocation subrequest limit). The account-wide Workers Free D1 cap is 100,000 rows written per UTC day.
+
+The persist planners in `src/lib/sim-persist.ts` now do this:
+
+1. **`quote_bars`** — insert only new `(symbol, ts)` rows; prune with `DELETE FROM quote_bars WHERE ts < ?` using a 24-hour cutoff, and only when stale rows exist. The in-memory book still keeps a 24-hour window (or the 21 synthesized starter bars when a symbol has fewer than 10).
+2. **`proposals`** — persist only the last **12** by `createdAt` (the same cap the Simulator “Latest check” list already showed). Existing kept rows are left in place; extras are deleted; only missing ids are inserted. `saveSim` also slices the in-memory list to this cap before saving.
+3. **`sim_orders` / `sim_selected_rules`** — skip the write entirely when the stored set already matches; otherwise delete missing rows, update changed orders, and insert new ones.
+4. Remaining writes run through `db.batch()` (MiniDb `batch` / `runWrites`) instead of one statement per round trip.
+5. **`positions`** — `upsertPosition` no-ops when the stored row already matches (including `source`, defaulting to `"app"`).
+6. **`price_marks`** — `insertPriceMark` no-ops when the latest mark for that position already has the same price.
+7. **`app_settings`** — `saveSettings` no-ops when every persisted field is unchanged (same `saveSim` path; keeps a steady-state tick from rewriting the settings row).
+
+`GET /api/session` is rate-limited in Worker memory (60 requests per minute per IP) and **does not write** `rate_limits`. Other routes still persist `rate_limits` in D1. A session request must stay a read so a D1 write-cap failure cannot 500 the first paint (which keeps `Loading…` and shows the error; see [§6.1](#61-document-and-chrome)).
+
+Measured locally on a steady-state mid-window tick (10 symbols already stored with 60 bars each, one new bar per symbol, last 12 proposals already stored, 27 unchanged orders, 6 unchanged selected rules, 9 unchanged positions, 9 unchanged same-price marks, unchanged settings): **668 write statements before, 10 after** (`test/sim-persist.test.ts`). A real cron tick still inserts the `sim_cycle` `audit_index` row when the cycle finishes; holdings sync and daily scores write nothing when nothing changed.
+
+
 ## 9. Planned (approved, not built)
 
 Mark these clearly in any rebuild: they are **agreed product direction**, not present in the code.
@@ -575,7 +594,7 @@ Apply the numbered SQL files in order. Types are portable (`TEXT`, `INTEGER`, `R
 - **oauth_state** — `state TEXT PK`, `verifier TEXT NOT NULL`, `redirect_uri TEXT NOT NULL`, `expires_at INTEGER NOT NULL`
 - **rh_client** — `id INTEGER PK CHECK (id = 1)`, `client_id TEXT NOT NULL`, `token_endpoint TEXT NOT NULL`, `registration_endpoint TEXT NOT NULL`, `issuer TEXT NOT NULL`, `resource TEXT NOT NULL`
 - **rh_tokens** — `id INTEGER PK CHECK (id = 1)`, `access_ct TEXT NOT NULL`, `access_iv TEXT NOT NULL`, `refresh_ct TEXT`, `refresh_iv TEXT`, `expires_at TEXT`, `lifetime_secs INTEGER`
-- **rate_limits** — `key TEXT PK`, `hits INTEGER NOT NULL`, `window_start INTEGER NOT NULL`
+- **rate_limits** — `key TEXT PK`, `hits INTEGER NOT NULL`, `window_start INTEGER NOT NULL`. Most rate-limited routes persist here. `GET /api/session` uses an in-memory bucket instead, so a D1 write cap cannot 500 the first paint.
 - **audit_index** — `id TEXT PK`, `at INTEGER NOT NULL`, `action TEXT NOT NULL`, `detail TEXT NOT NULL`
 
 ### 10.2 `0002_v2.sql` (in addition to the alters above)
@@ -628,7 +647,7 @@ Relationships (v3 trading core): `trading_rules` 1—N `rule_versions` 1—N `ru
 
 ## 11. API routes
 
-CSRF: non-GET `/api/*` (except listed auth and callback paths) require the CSRF token issued by `GET /api/csrf`. Rate limits apply (for example reads 120/min). Authenticated API (except `/api/auth/*`, `/api/health`, `/api/csrf`, `/api/session`, `/api/robinhood/callback`) requires a passkey session and rejects a recovery-only session with `Sign in with your passkey.`
+CSRF: non-GET `/api/*` (except listed auth and callback paths) require the CSRF token issued by `GET /api/csrf`. Rate limits apply (for example reads 120/min). `GET /api/session` is the exception that uses an in-memory bucket and does not write D1. Authenticated API (except `/api/auth/*`, `/api/health`, `/api/csrf`, `/api/session`, `/api/robinhood/callback`) requires a passkey session and rejects a recovery-only session with `Sign in with your passkey.`
 
 **Passkey step-up** (5 minutes, error `Confirm with your passkey.`) is required for: `POST /api/mode`, `/api/settings`, `/api/top10`, `/api/positions/:id/exits`, `/api/rules`, `/api/rules/:id`, `/api/rules/:id/status`, `/api/robinhood/connect`, `/api/robinhood/disconnect`.
 
@@ -638,7 +657,7 @@ CSRF: non-GET `/api/*` (except listed auth and callback paths) require the CSRF 
 | --- | --- | --- |
 | GET | `/api/health` | `{ ok: true }` |
 | GET | `/api/csrf` | Issue CSRF cookie/token |
-| GET | `/api/session` | Auth state (`authenticated`, `registered`, `recovery`, `stepUp`) |
+| GET | `/api/session` | Auth state (`authenticated`, `registered`, `recovery`, `stepUp`). Rate-limited in Worker memory (60/min per IP); does **not** write D1 `rate_limits`. |
 | POST | `/api/auth/register/options` and `verify` | WebAuthn register |
 | POST | `/api/auth/login/options` and `verify` | WebAuthn login or step-up (`stepUp: true`) |
 | POST | `/api/auth/logout` | Clear session |
@@ -682,7 +701,7 @@ Default Top 10 on seed: `AAPL`, `MSFT`, `NVDA`, `AMZN`, `GOOGL`, `META`, `AVGO`,
 2. It gets Durable Object `TRADER` id `"owner"` and calls `tickSimulator()` (waitUntil).
 3. `seed()`: `ensureV2`, `ensureLiveSync`, insert default `app_settings` + Top 10 if missing, `seedDraftRules`.
 4. `syncLiveHoldings()`: load holdings (MCP or fixture / empty), load orders if connected, apply pending fills, compute effective Trading capital, `reconcileLiveHoldings`, persist and audit.
-5. `cycleSimulator()`: `quoteBook()` (live quotes for Top 10 **and open live/sim symbols**, else recorded book), `runSimulatorCycle`, save sim state into `positions`/`trades`/`sim_orders`/bars, audit each sim event and `sim_cycle`.
+5. `cycleSimulator()`: `quoteBook()` (live quotes for Top 10 **and open live/sim symbols**, else recorded book), `runSimulatorCycle`, save sim state incrementally as in [§8.5](#85-simulator-persistence-and-d1-write-reduction-built) (`quote_bars` append + 24h prune, last 12 `proposals`, no-op skips for unchanged orders/rules/positions/marks/settings, `db.batch()` for the remaining writes), audit each sim event and `sim_cycle`.
 6. If there is at least one **closed** position, `maybeComputeScores()` (no more often than daily).
 
 Account Summary `summary()` and Review `reviewScreen()` also `seed` + `syncLiveHoldings`. `cycle()` on the account path may `proposeLiveEntries` only if the live gate is `"1"`.
@@ -764,6 +783,8 @@ Dates are America/Chicago unless noted. All of the following were agreed 13 Nove
 | 13 Nov 2026 | Holdings sync, live order records, simulator auto-start (PR #8). Migration `0004`. Promoted to prod the same day (merge `252b479`, Worker `1259682e-103a-491f-a6dd-9ab2b69f589a`). See [HANDOVER.md](HANDOVER.md). |
 | 13 Nov 2026 | Persist `trade_signals` (id, value, threshold, fired) on every buy/add/exit. Migration `0005` applied on prod at 8:26:53 AM CST (Worker `286f9178-…`, rollback `1259682e-…`). |
 | 13 Nov 2026 | Restore signal `name`/`reason` on `listTrades` (migration `0006`), require live `proposeLiveEntries` signals to fire before placing (same `allRequiredSignalsFired` rule as the simulator), and show stored signals on the trades table with the §6 wording. Promoted to prod the same day (merge `1376f96`, Worker `a776d60f-86da-460e-8512-b1abaa079e3b`, rollback `286f9178-…`). `0006` applied at 8:45:27 AM CST (pre-`0006` bookmark `000000a2-00000000-00005122-15227bc7e1bb4436c9211a513f305447`). The NVDA 7:55 / 8:00 AM CST backfill was applied in the 8:45 AM CST window (6 rows; rerun inserts 0). |
+| 13 Nov 2026 | If the session request fails, the first paint keeps `Loading…` and also shows the error (API `error`, else `Request failed.` or `Could not load.`). Dev-only until a later prod go-ahead. |
+| 13 Nov 2026 | Cut D1 writes on the cron path: incremental `quote_bars` plus a 24h prune; cap stored `proposals` to the last 12; skip no-op `sim_orders` / `sim_selected_rules` / `app_settings` rewrites; `db.batch()` remaining writes; skip unchanged position upserts and same-price `price_marks`; take `GET /api/session` off the `rate_limits` table (in-memory 60/min per IP). Locally measured steady-state saveSim statements dropped from 668 to 10. On PR #11; dev-only until a later prod go-ahead. Do not change the Workers plan without explicit owner approval. |
 | 13 Nov 2026 (planned, not built) | AI-created Experimenting rules; AI approve/retire suggestions; rule points 0–100 with the weights in [§9](#9-planned-approved-not-built); weekly Saturday 9:00 AM CST review; churncapital.com later. |
 
 ---

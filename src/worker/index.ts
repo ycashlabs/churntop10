@@ -61,7 +61,7 @@ app.get("/api/health", (c) => c.json({ ok: true }));
 app.get("/api/csrf", async (c) => c.json({ csrfToken: await issueCsrf(c) }));
 
 app.get("/api/session", async (c) => {
-  const limited = await rateLimit(c, "session", 60);
+  const limited = await rateLimit(c, "session", 60, { persist: false });
   if (limited) return limited;
   await issueCsrf(c);
   const registered = await c.env.DB.prepare("SELECT id FROM credentials LIMIT 1").first();

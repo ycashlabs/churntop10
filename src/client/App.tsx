@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { PositionView, ReviewScreen, RuleHistoryView, RuleView, SessionView, SimulatorView, Summary } from "../lib/api-types";
 import { formatTradeSignalLine } from "../lib/trade-signals";
+import { sessionBootstrapCopy } from "../lib/boot-copy";
 import { SESSION_HELP } from "../lib/clock";
 import { parseCallbackInput } from "../lib/oauth";
 import { getPendingConnect, getReviews, getRuleHistory, getRules, getSession, getSimulator, getSummary, loadCsrf, post, postJson, registerPasskey, signIn } from "./api";
@@ -54,7 +55,10 @@ export function App() {
     }
   }
 
-  if (!session) return <main className="shell"><p>Loading…</p></main>;
+  if (!session) {
+    const boot = sessionBootstrapCopy(session, error);
+    return <main className="shell"><p>{boot.heading}</p>{boot.error && <p className="error">{boot.error}</p>}</main>;
+  }
   if (!session.authenticated || session.recovery) {
     return <SignIn session={session} error={error} onDone={() => run(async () => { await refresh(); })} />;
   }
