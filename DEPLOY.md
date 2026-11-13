@@ -33,7 +33,7 @@ curl -X POST "https://api.cloudflare.com/client/v4/accounts/f59b2545f5783d93b378
 # repeat with "churntop10-audit-prod"
 ```
 
-Apply the numbered files in `migrations/` in order (`0001_init.sql`, `0002_v2.sql`, `0003_v3.sql`) once per database before the first request. A database that already has v2 only needs `0003_v3.sql` plus the app’s data backfill (see [docs/storage.md](docs/storage.md)). Fresh apply:
+Apply the numbered files in `migrations/` in order (`0001_init.sql`, `0002_v2.sql`, `0003_v3.sql`, `0004_live_sync.sql`) once per database before the first request. A database that already has v3 only needs `0004_live_sync.sql`. A database that already has v2 only needs `0003_v3.sql` and `0004_live_sync.sql` plus the app’s data backfill (see [docs/storage.md](docs/storage.md)). Fresh apply:
 
 ```bash
 curl -X POST "https://api.cloudflare.com/client/v4/accounts/f59b2545f5783d93b378006f3eb10bb4/d1/database/$DATABASE_ID/query" \

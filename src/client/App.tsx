@@ -160,7 +160,7 @@ function SummaryPage({ summary }: { summary: Summary }) {
           <dt>Quotes</dt><dd>{summary.quoteSource === "robinhood" ? "Live Robinhood" : "Recorded book (Robinhood not connected)"}</dd>
         </dl>
       </section>
-      <PositionsPanel title="Live positions" positions={summary.positions ?? []} empty="No open live positions. Live real-money trading stays off until you approve it." onChanged={() => window.location.reload()} />
+      <PositionsPanel title="Live positions" positions={summary.positions ?? []} empty="No open live positions. Robinhood holdings are imported here automatically. Live real-money trading stays off until you approve it." onChanged={() => window.location.reload()} />
     </div>
   );
 }
@@ -710,7 +710,7 @@ function ReviewPage() {
       {error && <p className="error">{error}</p>}
       <section className="card">
         <h2>Review</h2>
-        <p>Closed positions, automatic bot notes, and scorecards. Filters apply to the list below.</p>
+        <p>Closed positions, imported live holdings, automatic bot notes, and scorecards. Filters apply to the list below.</p>
         <div className="row wrap">
           <label>Symbol<input value={symbol} onChange={(event) => setSymbol(event.target.value.toUpperCase())} /></label>
           <label>Session

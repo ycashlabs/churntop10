@@ -8,7 +8,7 @@ Stay on **Cloudflare D1** until the trading system works. D1 is the only backend
 
 Long term, move to **self-hosted Postgres we control, with redundancy**. The application talks to the database only through the storage interface in `src/lib/storage.ts`. The D1 implementation lives in `src/worker/storage/d1.ts`. A Postgres implementation can be added later and selected by configuration, without rewriting trading, rules, or the UI.
 
-Migrations are the numbered SQL files in `migrations/`. They use standard types, foreign keys, and indexes, and avoid SQLite-only tricks so they can be translated to Postgres. Applying `0001` through `0003` builds a fresh database. `0003` plus the data backfill in `src/worker/storage/migrate.ts` upgrades a v2 database (positions, trades, rules, and settings) to the v3 schema.
+Migrations are the numbered SQL files in `migrations/`. They use standard types, foreign keys, and indexes, and avoid SQLite-only tricks so they can be translated to Postgres. Applying `0001` through `0004` builds a fresh database. `0003` plus the data backfill in `src/worker/storage/migrate.ts` upgrades a v2 database (positions, trades, rules, and settings) to the v3 schema. `0004_live_sync.sql` adds portable `source` text columns on `positions` and `trades` (default `app`) and indexes on `(mode, symbol, status)` and `trades.broker_order_id`, for Robinhood holdings sync and live order records. Apply `0004` before deploying a Worker that writes those columns, and record it in `d1_migrations`.
 
 ## Storage interface
 
