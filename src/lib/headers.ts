@@ -35,3 +35,14 @@ export function hostCookie(name: string, value: string, maxAge: number): string 
   if (maxAge >= 0) parts.push(`Max-Age=${maxAge}`);
   return parts.join("; ");
 }
+
+/** HTML must never be cached, so a deploy is picked up on the next load and old bundles are not kept alive. Hashed assets keep their own caching. */
+export function withHtmlNoStore(response: Response): Response {
+  const type = response.headers.get("content-type") ?? "";
+  if (!type.toLowerCase().includes("text/html")) return response;
+  const headers = new Headers(response.headers);
+  headers.set("cache-control", "no-store, no-cache, must-revalidate, max-age=0");
+  headers.delete("etag");
+  headers.delete("last-modified");
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}

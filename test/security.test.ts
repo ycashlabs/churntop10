@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { nextBucket, recoveryPublicBody } from "../src/lib/rate.js";
 import { accessDecision, verifyAccessJwt } from "../src/lib/access.js";
-import { applySecurityHeaders, CONTENT_SECURITY_POLICY, hostCookie, securityHeaders } from "../src/lib/headers.js";
+import { applySecurityHeaders, CONTENT_SECURITY_POLICY, hostCookie, securityHeaders, withHtmlNoStore } from "../src/lib/headers.js";
 import { maskAccountNumber, redactJson } from "../src/lib/mask.js";
 
 async function signedJwt(email: string, overrides: Record<string, unknown> = {}): Promise<{ token: string; jwk: JsonWebKey }> {
@@ -98,5 +98,15 @@ describe("masking", () => {
     expect(logged).not.toContain("544784028");
     expect(logged).not.toContain("super-secret-token");
     expect(logged).toContain("[redacted]");
+  });
+});
+
+describe("html caching", () => {
+  it("marks HTML no-store and leaves hashed assets alone", () => {
+    const html = withHtmlNoStore(new Response("<!doctype html>", { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=0, must-revalidate", etag: "\"abc\"" } }));
+    expect(html.headers.get("cache-control")).toContain("no-store");
+    expect(html.headers.get("etag")).toBeNull();
+    const js = withHtmlNoStore(new Response("x", { headers: { "content-type": "application/javascript", "cache-control": "public, max-age=31536000, immutable" } }));
+    expect(js.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
   });
 });

@@ -7,7 +7,7 @@ import {
 } from "@simplewebauthn/server";
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from "@simplewebauthn/server";
 import type { Summary } from "../lib/api-types.js";
-import { securityHeaders } from "../lib/headers.js";
+import { securityHeaders, withHtmlNoStore } from "../lib/headers.js";
 import { recoveryPublicBody } from "../lib/rate.js";
 import {
   LOOPBACK_REDIRECT_URI,
@@ -310,6 +310,14 @@ app.post("/api/robinhood/connect", async (c) => {
   }
 });
 
+app.get("/api/robinhood/pending", async (c) => {
+  const limited = await rateLimit(c, "read", 120);
+  if (limited) return limited;
+  const row = await c.env.DB.prepare("SELECT expires_at FROM oauth_state WHERE expires_at > ? AND redirect_uri = ? ORDER BY expires_at DESC LIMIT 1").bind(Date.now(), LOOPBACK_REDIRECT_URI).first<{ expires_at: number }>();
+  c.header("cache-control", "no-store");
+  return c.json(row ? { pending: true, expiresAt: new Date(row.expires_at).toISOString(), redirectUri: LOOPBACK_REDIRECT_URI } : { pending: false, redirectUri: LOOPBACK_REDIRECT_URI });
+});
+
 app.post("/api/robinhood/complete", async (c) => {
   const limited = await rateLimit(c, "rh-complete", 10);
   if (limited) return limited;
@@ -356,7 +364,7 @@ async function finishConnect(c: AppContext, input: { code: string; state: string
 app.all("*", async (c) => {
   if (c.req.method !== "GET" && c.req.method !== "HEAD") return c.json({ error: "Not found." }, 404);
   const asset = await c.env.ASSETS.fetch(c.req.raw);
-  return asset;
+  return withHtmlNoStore(asset);
 });
 
 app.onError((error, c) => {

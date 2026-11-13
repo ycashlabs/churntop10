@@ -1,8 +1,16 @@
 import { useEffect, useState } from "react";
 import type { SessionView, Summary } from "../lib/api-types";
-import { getSession, getSummary, loadCsrf, post, registerPasskey, signIn } from "./api";
+import { getPendingConnect, getSession, getSummary, loadCsrf, post, registerPasskey, signIn } from "./api";
 
 type SettingsDraft = Summary["settings"];
+
+const CONNECT_URL_KEY = "churntop10.connectUrl";
+const CONNECT_AT_KEY = "churntop10.connectAt";
+
+function connectUrlExpired(): boolean {
+  const at = Number(sessionStorage.getItem(CONNECT_AT_KEY) ?? "0");
+  return !at || Date.now() - at > 10 * 60 * 1000;
+}
 
 export function App() {
   const [session, setSession] = useState<SessionView | null>(null);
@@ -200,8 +208,37 @@ function TopPage({ summary, onRun }: { summary: Summary; onRun: (action: () => P
 
 function SettingsPage({ summary, onRun }: { summary: Summary; onRun: (action: () => Promise<Summary | void>) => void }) {
   const [draft, setDraft] = useState<SettingsDraft>(summary.settings);
-  const [connectUrl, setConnectUrl] = useState("");
+  const [connectUrl, setConnectUrlState] = useState(() => sessionStorage.getItem(CONNECT_URL_KEY) ?? "");
   const [pasted, setPasted] = useState("");
+  const [showPaste, setShowPaste] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [pendingUntil, setPendingUntil] = useState("");
+  function setConnectUrl(url: string) {
+    if (url) sessionStorage.setItem(CONNECT_URL_KEY, url);
+    else sessionStorage.removeItem(CONNECT_URL_KEY);
+    setConnectUrlState(url);
+  }
+  function clearConnect() {
+    setConnectUrl("");
+    setPasted("");
+    setShowPaste(false);
+  }
+  async function loadPending() {
+    try {
+      const next = await getPendingConnect();
+      setPending(next.pending);
+      setPendingUntil(next.expiresAt ?? "");
+      if (!next.pending && connectUrlExpired()) setConnectUrl("");
+    } catch {
+      setPending(false);
+    }
+  }
+  useEffect(() => {
+    void loadPending();
+    const onFocus = () => { void loadPending(); };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
   useEffect(() => { setDraft(summary.settings); }, [summary]);
   function setNumber(key: keyof SettingsDraft, value: string) {
     setDraft({ ...draft, [key]: Number(value) });
@@ -230,18 +267,27 @@ function SettingsPage({ summary, onRun }: { summary: Summary; onRun: (action: ()
         )}
         <button className="danger" type="button" onClick={() => onRun(() => post("/api/kill"))}>Kill switch</button>
         {summary.killed && <button className="quiet" type="button" onClick={() => onRun(() => post("/api/resume"))}>Clear kill switch</button>}
-        <button className="quiet" type="button" onClick={() => onRun(async () => {
-          const body = await post("/api/robinhood/connect") as Summary & { url?: string };
-          if (body.url) setConnectUrl(body.url);
-          return undefined;
-        })}>Connect Robinhood</button>
+        <button className="quiet" type="button" onClick={() => {
+          setShowPaste(true);
+          onRun(async () => {
+            const body = await post("/api/robinhood/connect") as Summary & { url?: string };
+            if (body.url) {
+              setConnectUrl(body.url);
+              sessionStorage.setItem(CONNECT_AT_KEY, String(Date.now()));
+            }
+            await loadPending();
+            return undefined;
+          });
+        }}>Connect Robinhood</button>
+        {!showPaste && !pending && !connectUrl && <button className="quiet" type="button" onClick={() => setShowPaste(true)}>Paste Robinhood address</button>}
       </div>
-      {connectUrl && (
-        <div className="card">
-          <h3>Connect Robinhood</h3>
+      {(showPaste || pending || connectUrl) && (
+        <div className="card" id="robinhood-paste">
+          <h3>Paste Robinhood address</h3>
+          {pending && <p>A Robinhood sign-in is waiting{pendingUntil ? ` until ${new Date(pendingUntil).toLocaleTimeString()}` : ""}. Paste the address to finish.</p>}
           <ol>
-            <li><a href={connectUrl} target="_blank" rel="noopener noreferrer">Open Robinhood sign-in</a> and approve.</li>
-            <li>Robinhood then sends you to a page that won't load (it starts with <code>http://127.0.0.1:47621</code>). That's expected.</li>
+            <li>{connectUrl ? <a href={connectUrl} target="_blank" rel="noopener noreferrer">Open Robinhood sign-in</a> : "Click Connect Robinhood to open Robinhood sign-in"} and approve.</li>
+            <li>Robinhood then sends you to a page that won't load (it starts with <code>http://127.0.0.1:47621/callback</code>). That's expected.</li>
             <li>Copy the whole address from that tab's address bar and paste it here within 10 minutes.</li>
           </ol>
           <label>Address from the page that didn't load
@@ -249,11 +295,14 @@ function SettingsPage({ summary, onRun }: { summary: Summary; onRun: (action: ()
           </label>
           <div className="row">
             <button type="button" disabled={!pasted.trim()} onClick={() => onRun(async () => {
-              await post("/api/robinhood/complete", { callbackUrl: pasted });
-              setConnectUrl("");
-              setPasted("");
+              try {
+                await post("/api/robinhood/complete", { callbackUrl: pasted });
+                clearConnect();
+              } finally {
+                await loadPending();
+              }
             })}>Finish connecting</button>
-            <button className="quiet" type="button" onClick={() => { setConnectUrl(""); setPasted(""); }}>Cancel</button>
+            <button className="quiet" type="button" onClick={clearConnect}>Close</button>
           </div>
         </div>
       )}

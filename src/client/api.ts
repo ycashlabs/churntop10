@@ -62,3 +62,13 @@ async function stepUp(): Promise<boolean> {
 export function post(path: string, body?: unknown): Promise<Summary> {
   return api<Summary>(path, { method: "POST", body: body === undefined ? "{}" : JSON.stringify(body) });
 }
+
+export interface PendingConnect {
+  pending: boolean;
+  expiresAt?: string;
+  redirectUri: string;
+}
+
+export function getPendingConnect(): Promise<PendingConnect> {
+  return api<PendingConnect>("/api/robinhood/pending");
+}
