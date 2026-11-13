@@ -9,11 +9,13 @@
     "build": "npm run build:client && npm run build:worker",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.worker.json --noEmit",
-    "test": "vitest run",
+    "test": "node scripts/check-design.mjs && vitest run",
     "check:html": "node scripts/check-html.mjs",
     "check:bundle": "node scripts/check-bundle.mjs",
     "cf-typegen": "wrangler types",
-    "check:design": "node scripts/check-design.mjs"
+    "check:design": "node scripts/check-design.mjs",
+    "backfill:trade-signals": "node --experimental-strip-types scripts/backfill-trade-signals.mjs",
+    "conformance": "node scripts/conformance.mjs"
   },
   "dependencies": {
     "@simplewebauthn/browser": "13.1.2",

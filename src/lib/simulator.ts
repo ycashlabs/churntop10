@@ -295,6 +295,7 @@ export function proposeSimEntries(
       ids,
       buyRule: held ? undefined : rule,
       sellRule: held ? undefined : sellRule,
+      signals: computed,
     });
     if (filled) {
       working.push(symbol);
@@ -347,6 +348,7 @@ export function fillSimEntry(
     ids: () => string;
     buyRule?: RuleRecord;
     sellRule?: RuleRecord;
+    signals?: SignalResult[];
   },
 ): boolean {
   const cost = roundMoney(input.quantity * input.price);
@@ -419,6 +421,7 @@ export function fillSimEntry(
       status: "filled",
       createdAt: at,
       symbol: input.symbol,
+      signals: input.signals ?? [],
     });
   }
   return true;

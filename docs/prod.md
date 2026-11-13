@@ -1,5 +1,17 @@
 # Prod, as deployed
 
+Living snapshot of ids and pending decisions: [HANDOVER.md](HANDOVER.md). Nothing in this note is a secret value. Prod shares no data or credentials with dev.
+
+## Current prod (PR #8, 13 November 2026, America/Chicago)
+
+- Merge of PR #8: `252b479ad6261b6ba50d01412fe750bcd9283177`. Worker `churntop10-prod` at https://top10.ycashlabs.com (Workers Custom Domain). Version **`1259682e-103a-491f-a6dd-9ab2b69f589a`**, uploaded **7:50:44 AM CST**. Script SHA-256 `c53d6d26371c89ee6f429fc3f24cfd2781a2d0d3cc2727128891de9730692576`. Embedded UI, no `assets`, `TOKEN_KEY` kept, `ALLOW_LIVE_TRADING` is `"0"`, `ENVIRONMENT` is `prod`, `ACCESS_ENFORCE` is `1`. Cron is `*/5 * * * *`.
+- D1 `churntop10-prod` (`b2e4f00d-c7a2-41a6-a75f-12a3043ca20e`) has `0001_init.sql` through `0004_live_sync.sql`. Pre-`0004` Time Travel bookmark: `00000097-00000000-00005122-dc89ae249ceaced2a400bf9f08d1623d`. **`0005` is not on prod yet** (waits for go-ahead).
+- The auto-start Worker **does** run `cycleSimulator` when there is no open sim position. A starter NVDA (fake money) opened at **7:55:53 AM CST**. An imported live TSLL (qty 1, avg 11.05) was recorded at **7:52:39 AM CST**. See HANDOVER for ids.
+- Access application `Churn Top 10 prod` (`8f553625-0283-41e0-8a63-c43789e8c3a5`), team `dawn-rice-07a4`, audience `b05d3bc57044f2fd02b7e9666d7e61a18e236784bdcbda9ea8322b9d6fe14517`. Owner only: `tom2258@gmail.com`. No bypass, no service token.
+- Rollback of this upload: previous Worker `26e737de-8705-43b4-9833-d60e57a90f8e`.
+
+The section below is the earlier v3 verification (before PR #8). Prefer the current section and HANDOVER when they disagree.
+
 Deployed from `main` at merge commit `f53af3ec0ab03a9965ae3c547923037e37a60c95` (PR #7, head `8db2a5f3586def16320920fa1304e2324acdf3fb`). Nothing in this note is a secret value. Prod shares no data or credentials with dev.
 
 - Worker `churntop10-prod` at https://top10.ycashlabs.com. Workers Custom Domain, not a zone route. View Only. `ACCESS_ENFORCE` is `1`. `ALLOW_LIVE_TRADING` is `0`. Cron is `*/5 * * * *`.

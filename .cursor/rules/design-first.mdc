@@ -1,11 +1,11 @@
 ---
-description: Require DESIGN.md to be read and updated; hard safety rules for this trading app.
+description: Require DESIGN.md and HANDOVER.md to be read and updated; hard safety rules for this trading app.
 alwaysApply: true
 ---
 
 # Design first
 
-Before any work in this repository, read `docs/DESIGN.md` in full. Follow it. Update it in the same PR as any change to behavior, schema, UI copy, APIs, settings, or wrangler config. CI (`scripts/check-design.mjs`) fails the PR if `src/`, `migrations/`, or wrangler config change and `docs/DESIGN.md` does not.
+Before any work in this repository, read `docs/DESIGN.md` in full, then `docs/HANDOVER.md`. Follow the design. Update `docs/DESIGN.md` in the same PR as any change to behavior, schema, UI copy, APIs, settings, or wrangler config. Update `docs/HANDOVER.md` in the same PR when wrangler config, migrations, deploy scripts, routines-related docs, env/bindings, current state, or pending decisions change. `npm test` runs `scripts/check-design.mjs`, which fails the change if those docs are missing.
 
 Hard safety rules:
 

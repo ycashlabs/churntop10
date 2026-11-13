@@ -3,10 +3,14 @@
 Every agent, bot, or coding assistant that works on this repository must:
 
 1. **Read [docs/DESIGN.md](docs/DESIGN.md) in full before doing any work.** It is the single authoritative rebuild document and product contract. Do not skim a section and start editing.
-2. **Follow DESIGN.md.** Do not invent behavior that contradicts it. If the code and the document disagree, stop and flag the mismatch instead of silently “fixing” one side.
-3. **Update DESIGN.md in the same pull request as any change** that affects behavior, schema, UI copy, APIs, settings, wrangler config, or operational rules. CI fails the PR if `src/`, `migrations/`, `wrangler.jsonc`, or `wrangler.toml` change and `docs/DESIGN.md` does not (`npm run check:design`).
+2. **Then read [docs/HANDOVER.md](docs/HANDOVER.md)** for current environments, resource ids, secret *locations*, deploy state, and pending owner decisions.
+3. **Follow DESIGN.md.** Do not invent behavior that contradicts it. If the code and the document disagree, stop and flag the mismatch instead of silently “fixing” one side.
+4. **Update DESIGN.md in the same pull request as any change** that affects behavior, schema, UI copy, APIs, settings, wrangler config, or operational rules.
+5. **Update HANDOVER.md in the same PR** whenever wrangler config, migrations, deploy scripts, routines-related docs, env/bindings, current state, or a pending decision changes.
 
-Related pointers: [docs/spec-v2.md](docs/spec-v2.md), [docs/storage.md](docs/storage.md), [docs/sessions.md](docs/sessions.md), [DEPLOY.md](DEPLOY.md), [ROLLBACK.md](ROLLBACK.md), [docs/prod.md](docs/prod.md), [docs/dev.md](docs/dev.md), [docs/ACCESS.md](docs/ACCESS.md), and [docs/contracts/robinhood/](docs/contracts/robinhood/). If those files and DESIGN.md ever drift, fix DESIGN.md (and the other file) in the same change.
+CI: `npm test` runs `npm run check:design` (`scripts/check-design.mjs`) first. It fails if `src/`, `migrations/`, `wrangler.jsonc`, or `wrangler.toml` change and `docs/DESIGN.md` does not, or if wrangler config, migrations, deploy scripts, routines-related docs, or env/bindings change and `docs/HANDOVER.md` does not. A dedicated Actions job with a full git history is prepared in [docs/ci-design-job.pending.yml](docs/ci-design-job.pending.yml) but is not in `.github/workflows/` yet (a GitHub token with the `workflow` scope is required to add it).
+
+Related pointers: [docs/TEST-PLAN.md](docs/TEST-PLAN.md), [docs/spec-v2.md](docs/spec-v2.md), [docs/storage.md](docs/storage.md), [docs/sessions.md](docs/sessions.md), [DEPLOY.md](DEPLOY.md), [ROLLBACK.md](ROLLBACK.md), [docs/prod.md](docs/prod.md), [docs/dev.md](docs/dev.md), [docs/ACCESS.md](docs/ACCESS.md), and [docs/contracts/robinhood/](docs/contracts/robinhood/). If those files and DESIGN.md ever drift, fix DESIGN.md (and the other file) in the same change.
 
 ## Hard safety rules
 
