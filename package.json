@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "npm run build:client && wrangler d1 migrations apply DB --local && wrangler dev --env dev --port 8787",
+    "dev": "npm run build:client && wrangler d1 migrations apply DB --local && wrangler dev --port 8787",
     "build:client": "vite build",
     "build:worker": "node scripts/bundle-worker.mjs",
     "build": "npm run build:client && npm run build:worker",
@@ -22,6 +22,7 @@
     "react-dom": "19.1.0"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260702.1",
     "@eslint/js": "9.28.0",
     "@types/node": "^22.15.21",
     "@types/react": "19.1.6",
@@ -29,6 +30,7 @@
     "@vitejs/plugin-react": "4.5.0",
     "esbuild": "0.25.5",
     "eslint": "9.28.0",
+    "puppeteer-core": "^24.15.0",
     "typescript": "5.8.3",
     "typescript-eslint": "8.33.1",
     "vite": "6.3.5",
