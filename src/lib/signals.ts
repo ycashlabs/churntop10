@@ -198,3 +198,21 @@ export const FIRST_BUY_SIGNALS = ["price_above_20m_avg", "volume_above_recent", 
 export const ADD_STRENGTH_SIGNALS = ["price_above_20m_avg", "volume_above_recent", "spy_up"];
 export const ADD_DIP_SIGNALS = ["below_avg_cost", "above_20m_low", "no_sell_volume_spike", "spy_not_falling_hard"];
 export const EXIT_WEAKNESS_SIGNALS = ["below_20m_avg", "rising_volume", "spy_falling"];
+
+
+export interface SignalCatalogEntry {
+  id: string;
+  name: string;
+  description: string;
+  status: "candidate" | "active" | "retired";
+}
+
+/** Built-in signals seeded as active in the signals table. */
+export function signalCatalog(): SignalCatalogEntry[] {
+  return listSignalTypes().map((signal) => ({
+    id: signal.id,
+    name: signal.name,
+    description: signal.name,
+    status: "active" as const,
+  }));
+}

@@ -1,5 +1,5 @@
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
-import type { RuleHistoryView, RuleView, SessionView, SimulatorView, Summary } from "../lib/api-types";
+import type { RuleHistoryView, RuleView, ReviewScreen, SessionView, SimulatorView, Summary } from "../lib/api-types";
 
 let csrf = "";
 
@@ -87,4 +87,13 @@ export function getRuleHistory(familyId: string): Promise<{ history: RuleHistory
 
 export function postJson<T>(path: string, body?: unknown): Promise<T> {
   return api<T>(path, { method: "POST", body: body === undefined ? "{}" : JSON.stringify(body) });
+}
+
+export function getReviews(query: Record<string, string> = {}): Promise<ReviewScreen> {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value) params.set(key, value);
+  }
+  const suffix = params.toString() ? `?${params}` : "";
+  return api<ReviewScreen>(`/api/reviews${suffix}`);
 }

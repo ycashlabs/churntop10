@@ -1,6 +1,6 @@
 # Deploy
 
-The product contract is [docs/spec-v2.md](docs/spec-v2.md).
+The product contract is [docs/spec-v2.md](docs/spec-v2.md) (including the v3 section). The storage interface and long-term failover plan are in [docs/storage.md](docs/storage.md).
 
 This repository does not create Cloudflare resources and does not deploy. `npm run build` writes `dist/index.js`, an ES module Worker (`AccountTrader` is a named export, the default export is `fetch` + `scheduled`) with the built HTML, JS, and CSS embedded. The Worker serves that UI itself, so a deploy does not need a successful Workers assets-upload JWT. `dist/assets/` is still produced for local `wrangler dev` and as a fallback.
 
@@ -33,7 +33,7 @@ curl -X POST "https://api.cloudflare.com/client/v4/accounts/f59b2545f5783d93b378
 # repeat with "churntop10-audit-prod"
 ```
 
-Apply `migrations/0001_init.sql` once per database before the first request:
+Apply the numbered files in `migrations/` in order (`0001_init.sql`, `0002_v2.sql`, `0003_v3.sql`) once per database before the first request. A database that already has v2 only needs `0003_v3.sql` plus the app’s data backfill (see [docs/storage.md](docs/storage.md)). Fresh apply:
 
 ```bash
 curl -X POST "https://api.cloudflare.com/client/v4/accounts/f59b2545f5783d93b378006f3eb10bb4/d1/database/$DATABASE_ID/query" \

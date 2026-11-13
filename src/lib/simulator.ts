@@ -7,12 +7,18 @@ import type { Bar } from "./bars.js";
 import { synthesizeBars } from "./bars.js";
 import type { RuleRecord } from "./rules.js";
 import { computeSignals, signalStrength, type SignalContext, type SignalResult } from "./signals.js";
+import { effectiveTradingCapital, openExposure } from "./capital.js";
 
 export interface SimPosition {
+  id: string;
   symbol: string;
   quantity: number;
   avgCost: number;
   openedOn: string;
+  openedAt: number;
+  tradingCapitalSnapshot: number;
+  profitTargetPct: number;
+  stopLossPct: number;
   buyRuleId?: string;
   buyRuleVersion?: number;
   sellRuleId?: string;
@@ -84,6 +90,29 @@ export interface SimState {
   spyBars: Bar[];
   spyLast?: number;
   spyPreviousClose?: number;
+  tradingCapital: number;
+  pendingLegs: SimLeg[];
+  closedThisCycle: Array<{ position: SimPosition; exitPrice: number; exitType: string; at: number }>;
+}
+
+export interface SimLeg {
+  id: string;
+  positionId: string;
+  ruleVersionId?: string;
+  side: "buy" | "sell";
+  qty: number;
+  limitPrice?: number;
+  fillPrice?: number;
+  session: string;
+  bidAtOrder?: number;
+  askAtOrder?: number;
+  capitalSnapshot: number;
+  sizeReason: string;
+  exitReason?: string;
+  status: string;
+  createdAt: number;
+  signals?: SignalResult[];
+  symbol: string;
 }
 
 export interface SimEvent {
@@ -130,6 +159,9 @@ export function runSimulatorCycle(
   if (!next.selectedRuleIds) next.selectedRuleIds = [];
   if (!next.bars) next.bars = {};
   if (!next.spyBars) next.spyBars = [];
+  if (!next.pendingLegs) next.pendingLegs = [];
+  if (!next.closedThisCycle) next.closedThisCycle = [];
+  if (next.tradingCapital == null) next.tradingCapital = 0;
   recordBars(next, quotes, now);
   const events: SimEvent[] = [];
   next = manageSimExits(next, quotes, now, ids, events);
@@ -184,7 +216,7 @@ export function proposeSimEntries(
   fillEntries = true,
   skipSymbols: Set<string> = new Set(),
 ): SimState {
-  const working = state.orders.filter((item) => item.status === "working" || item.status === "watching").map((item) => item.symbol);
+  const working = state.orders.filter((item) => (item.status === "working" || item.status === "watching") && item.side === "buy" && (item.role === "entry" || item.role === "")).map((item) => item.symbol);
   const equity = equityOf(state, quotes);
   const buyRules = selected(state, "buy");
   const sellRules = selected(state, "sell");
@@ -212,18 +244,26 @@ export function proposeSimEntries(
       continue;
     }
     const refId = ids();
+    const effective = effectiveTradingCapital(state.tradingCapital, equity).capital;
+    const snapshot = held?.tradingCapitalSnapshot ?? effective;
+    const exposure = openExposure(state.positions.map((position) => {
+      const last = quotes.find((item) => item.symbol === position.symbol)?.last;
+      return { qty: position.quantity, avgCost: position.avgCost, last };
+    }));
     const guard: GuardContext = {
       now,
       mode: "live",
       killed: state.killed,
       top10: state.top10,
       held: state.positions.map((position) => ({ symbol: position.symbol, quantity: position.quantity, openedOn: position.openedOn, notional: roundMoney(position.quantity * position.avgCost) })),
-      equity,
+      equity: snapshot,
       buyingPower: state.cash,
       dayStartEquity: state.dayStartEquity,
-      profitTargetPct: state.profitTargetPct,
-      stopLossPct: state.stopLossPct,
+      profitTargetPct: held?.profitTargetPct ?? state.profitTargetPct,
+      stopLossPct: held?.stopLossPct ?? state.stopLossPct,
       dailyLossPct: state.dailyLossPct,
+      tradingCapital: effective,
+      openExposure: exposure,
       orderCap: state.orderCap ?? 100,
       ordersToday: ordersToday(state, now),
       quote: { symbol: quote.symbol, bid: quote.bid, ask: quote.ask, last: quote.last, tradable: quote.tradable, hasBidAsk: quote.hasBidAsk, asOf: quote.asOf },
@@ -319,15 +359,22 @@ export function fillSimEntry(
     const totalQty = existing.quantity + input.quantity;
     existing.avgCost = roundMoney((existing.quantity * existing.avgCost + cost) / totalQty);
     existing.quantity = totalQty;
-    stop = roundMoney(existing.avgCost * (1 - state.stopLossPct / 100));
-    target = roundMoney(existing.avgCost * (1 + state.profitTargetPct / 100));
+    stop = roundMoney(existing.avgCost * (1 - existing.stopLossPct / 100));
+    target = roundMoney(existing.avgCost * (1 + existing.profitTargetPct / 100));
     rebaseExits(state, existing, stop, target);
   } else {
+    const equity = state.cash + cost;
+    const snapshot = effectiveTradingCapital(state.tradingCapital, equity).capital;
     state.positions.push({
+      id: input.ids(),
       symbol: input.symbol,
       quantity: input.quantity,
       avgCost: input.price,
       openedOn: today,
+      openedAt: input.now.getTime(),
+      tradingCapitalSnapshot: snapshot,
+      profitTargetPct: state.profitTargetPct,
+      stopLossPct: state.stopLossPct,
       buyRuleId: input.buyRule?.id,
       buyRuleVersion: input.buyRule?.version,
       sellRuleId: input.sellRule?.id,
@@ -354,6 +401,25 @@ export function fillSimEntry(
     state.orders.push(order(input.ids(), `${input.refId}-target`, input.symbol, "sell", "limit", input.quantity, target, null, "working", "target", today, at));
   }
   state.usedRefIds.push(input.refId);
+  const position = state.positions.find((item) => item.symbol === input.symbol);
+  if (position) {
+    state.pendingLegs = state.pendingLegs ?? [];
+    state.pendingLegs.push({
+      id: input.ids(),
+      positionId: position.id,
+      ruleVersionId: input.buyRule?.id ?? position.buyRuleId,
+      side: "buy",
+      qty: input.quantity,
+      limitPrice: input.price,
+      fillPrice: input.price,
+      session: marketSession(input.now),
+      capitalSnapshot: position.tradingCapitalSnapshot,
+      sizeReason: existing ? "Add sized from signal strength, using the position Trading capital snapshot." : "Starter buy of 20% of the max position (2% of the position Trading capital snapshot).",
+      status: "filled",
+      createdAt: at,
+      symbol: input.symbol,
+    });
+  }
   return true;
 }
 
@@ -466,6 +532,8 @@ function applyExitsForPosition(
 }
 
 export function sellAllSimPositions(state: SimState, quotes: QuoteView[], now: Date, ids: () => string): { state: SimState; events: SimEvent[] } {
+  state.pendingLegs = state.pendingLegs ?? [];
+  state.closedThisCycle = state.closedThisCycle ?? [];
   const next = structuredClone(state);
   next.killed = true;
   const events: SimEvent[] = [];
@@ -532,6 +600,26 @@ export function closeSimPosition(state: SimState, position: SimPosition, price: 
     signals,
     reason: reason || `${role} exit`,
   });
+  state.pendingLegs = state.pendingLegs ?? [];
+  state.closedThisCycle = state.closedThisCycle ?? [];
+  state.pendingLegs.push({
+    id: ids(),
+    positionId: position.id,
+    ruleVersionId: position.sellRuleId,
+    side: "sell",
+    qty: position.quantity,
+    limitPrice: price,
+    fillPrice: price,
+    session: marketSession(now),
+    capitalSnapshot: position.tradingCapitalSnapshot,
+    sizeReason: "Full exit. Sells have no dollar limit.",
+    exitReason: reason || `${role} exit`,
+    status: "filled",
+    createdAt: now.getTime(),
+    signals,
+    symbol: position.symbol,
+  });
+  state.closedThisCycle.push({ position, exitPrice: price, exitType: role, at: now.getTime() });
 }
 
 function order(id: string, refId: string, symbol: string, side: string, type: string, quantity: number, limit: number | null, stop: number | null, status: string, role: string, openedOn: string, createdAt: number): SimOrder {

@@ -4,6 +4,8 @@ import { DRAFT_RULES, scorecardFromTrades } from "../src/lib/rules.js";
 import { listSignalTypes, computeSignals, signalStrength, FIRST_BUY_SIGNALS, ADD_DIP_SIGNALS, EXIT_WEAKNESS_SIGNALS } from "../src/lib/signals.js";
 import { maxPositionNotional, sizeAdd, sizeStarter, starterNotional } from "../src/lib/sizing.js";
 import { validExitPct } from "../src/lib/validator.js";
+import { effectiveTradingCapital, exposureBlocksNewBuy, tradingCapitalPresets, validTradingCapital } from "../src/lib/capital.js";
+import { buildPositionReview } from "../src/lib/reviews.js";
 import { runSimulatorCycle, sellAllSimPositions, type SimState } from "../src/lib/simulator.js";
 import type { QuoteView } from "../src/lib/decode.js";
 
@@ -65,6 +67,9 @@ function state(overrides: Partial<SimState> = {}): SimState {
     spyBars: [],
     spyLast: 600,
     spyPreviousClose: 595,
+    tradingCapital: 20000,
+    pendingLegs: [],
+    closedThisCycle: [],
     ...overrides,
   };
 }
@@ -159,5 +164,44 @@ describe("simulator v2", () => {
     expect(sold.state.positions).toHaveLength(0);
     const again = runSimulatorCycle(sold.state, [quote()], new Date(REGULAR.getTime() + 5 * 60 * 1000), ids);
     expect(again.events.some((event) => event.action === "sim_entry")).toBe(false);
+  });
+});
+
+describe("trading capital", () => {
+  it("saves a dollar figure, warns when it exceeds the balance, and pauses new buys when exposure is over the cap", () => {
+    expect(validTradingCapital(10000)).toBe(true);
+    expect(validTradingCapital(0)).toBe(false);
+    expect(tradingCapitalPresets(1000).map((item) => item.pct)).toEqual([10, 20, 30, 40, 50, 60, 70, 80, 90, 100]);
+    expect(tradingCapitalPresets(1000)[0]?.dollars).toBe(100);
+    expect(effectiveTradingCapital(20000, 10000)).toEqual({ capital: 10000, warn: true });
+    expect(effectiveTradingCapital(8000, 10000)).toEqual({ capital: 8000, warn: false });
+    expect(exposureBlocksNewBuy(1000, 1000, 1)).toBe(true);
+    expect(exposureBlocksNewBuy(1000, 200, 100)).toBe(false);
+  });
+});
+
+describe("position reviews", () => {
+  it("writes a bot note with pnl, hold time, and whether adds helped", () => {
+    const review = buildPositionReview({
+      position: {
+        id: "p1", mode: "sim", symbol: "NVDA", status: "closed",
+        tradingCapitalSnapshot: 10000, profitTargetPct: 1, stopLossPct: 1,
+        avgCost: 100, qty: 2, openedAt: 0, closedAt: 10 * 60 * 1000,
+      },
+      trades: [
+        { id: "t1", positionId: "p1", side: "buy", qty: 1, fillPrice: 100, askAtOrder: 100.1, bidAtOrder: 99.9, session: "regular", capitalSnapshot: 10000, sizeReason: "starter", status: "filled", createdAt: 0 },
+        { id: "t2", positionId: "p1", side: "buy", qty: 1, fillPrice: 100, askAtOrder: 100.1, bidAtOrder: 99.9, session: "regular", capitalSnapshot: 10000, sizeReason: "add", status: "filled", createdAt: 1000 },
+      ],
+      marks: [{ id: "m", positionId: "p1", at: 2000, price: 101 }],
+      exitType: "target",
+      exitPrice: 102,
+      now: 10 * 60 * 1000,
+      spyChangeAtEntry: 0.4,
+      sessionAtEntry: "regular",
+    });
+    expect(review.pnlDollars).toBeGreaterThan(0);
+    expect(review.addsCount).toBe(1);
+    expect(review.botNote).toMatch(/target/);
+    expect(review.botNote).toMatch(/add/);
   });
 });

@@ -145,3 +145,65 @@ The PDT 3-day-trade cap is **removed**. [FINRA Notice 26-10](https://www.finra.o
 ## Live real-money trading
 
 Live real-money trading stays off until the user explicitly approves. Until then, `ALLOW_LIVE_TRADING` remains `"0"`, no real Robinhood orders are placed, and the Simulator is the place that runs selected rules against fake money.
+
+## Spec v3 (agreed 13 November 2026)
+
+**Built** on the v2 implementation branch (iterative), agreed 13 November 2026 at 6:35 AM CST. This section is the contract for the work agreed after v2 was built. It extends, and where it conflicts it replaces, the v2 sections above. Live real-money trading stays off: `ALLOW_LIVE_TRADING` remains `"0"` and the app must not call Robinhood place or cancel tools.
+
+### Screens
+
+Six screens. The original five remain, with the additions below, plus **Review**.
+
+- **Account Summary** and **Simulator** show that mode’s positions together with their trades (one position to many trades), the position’s Trading capital snapshot, and that position’s profit target and stop-loss. Each open position has an **Edit capital** action.
+- **Review** — closed positions and their reviews, the best and worst signals, and rule scorecards, with filters for rule, symbol, session, date, and mode (live or sim).
+- **Settings** — adds **Trading capital**. Daily loss stop is a percent of Trading capital and, like the profit target, accepts any positive percent up to 100%.
+
+### Trading capital (very important)
+
+Settings holds a **fixed dollar amount** called Trading capital. The amount saved is the dollar figure, not a percentage. Settings also offers **quick-fill buttons at 10% increments of the current balance** (10% through 100%) plus a custom dollar entry.
+
+Each new position **snapshots Trading capital at open**. That snapshot is what the position uses for:
+
+- the 10% per-symbol cap
+- the 20% starter (2% of the snapshot)
+- later signal-sized adds
+
+Changing the Settings value applies only to positions opened afterwards. Existing open positions keep the snapshot they started with until the owner edits that position.
+
+Each open position has **Edit capital**, behind a confirm step. That changes only that position’s snapshot. The change is logged (old value, new value, time) in `position_capital_history`. An edit **never sells shares**. If the new cap is below current holdings, the app simply **stops adding**.
+
+Profit target and stop-loss stay based on average cost, and are now **set per position** (the Settings values are the defaults for newly opened positions). Editing a position’s target or stop is logged (old value, new value, time).
+
+If Trading capital is greater than the real current balance, the app **warns** and uses `min(capital, balance)` for new trades. Total **open exposure plus a new buy cannot exceed the current Trading capital**. Lowering Trading capital in Settings pauses new buys until exposure is back under the new figure. Buys still cannot exceed available buying power, and the app never borrows.
+
+The **daily loss stop** is a percent of Trading capital (this is the default they can change). It has no fixed 0.1–5% bound: any positive percent up to 100% is allowed, the same sanity rule as the profit target and stop-loss.
+
+### Schema
+
+The trading record is a portable relational schema, written so it can move to Postgres later: standard types only, proper foreign keys, indexes, and **everything through clean numbered migrations**. No SQLite-only tricks in those migrations. Data already stored by v2 is migrated cleanly.
+
+Tables:
+
+- **positions** — `mode` (live or sim), symbol, status, `trading_capital_snapshot`, `profit_target_pct`, `stop_loss_pct`, buy and sell `rule_version` ids, average cost, quantity, `opened_at`, `closed_at`. Re-buying a sold-out symbol opens a **new** position.
+- **trades** — `position_id` (FK), `rule_version_id`, side, quantity, limit and fill price, session, bid and ask at order, `capital_snapshot`, `size_reason`, `exit_reason`, `broker_order_id`, status, `created_at`.
+- **trade_signals** — `trade_id`, `signal_id`, value, passed.
+- **signals** — name, description, status (`candidate`, `active`, `retired`), `added_at`.
+- **rules**, **rule_versions**, **rule_signals** (parameters as JSON).
+- **price_marks** — `position_id`, `at`, price. Sampled each cycle for open positions.
+- **position_reviews** — written when a position closes: P&L in dollars and percent, hold minutes, exit type, best and worst price, SPY change at entry, session at entry, spread cost, adds count, `adds_helped`, an automatic `bot_note`, and an editable `user_note`.
+- **position_capital_history** — each Edit capital on a position.
+- **history for target/stop edits** on a position.
+- **rule_score_snapshots** — by period and mode: trade count, win rate, average P&L percent, worst loss, net after costs.
+- **signal_score_snapshots** — win rate and average P&L when the signal was true vs false, plus sample size.
+
+The Simulator uses the **same tables** with `mode = sim`.
+
+### Storage layer and database plan
+
+All database access goes through **one repository/storage interface**. The current implementation is D1. A Postgres backend can be swapped in later by configuration, without rewriting the trading logic.
+
+**Stay on D1 until the trading system works.** Long term, move to **self-hosted Postgres with redundancy**. See [storage.md](storage.md) for the interface and the emergency failover plan. That failover plan is **long-term and is not built** in this change.
+
+### Analysis
+
+When a position closes, the app writes a `position_review`, including an automatic `bot_note`. The owner can edit `user_note`. Each cycle records a `price_mark` for every open position. Rule and signal score snapshots are computed daily. The Review screen lists closed positions, highlights best and worst signals, shows rule scorecards, and filters by rule, symbol, session, date, and mode.

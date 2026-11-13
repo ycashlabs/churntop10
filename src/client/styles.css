@@ -64,3 +64,5 @@ a.button { display: inline-block; text-decoration: none; }
 .confirm { border: 1px solid var(--stamp); padding: 10px; margin-top: 8px; }
 select { border: 1px solid var(--ink); background: white; padding: 8px; color: var(--ink); width: 100%; }
 nav { flex-wrap: wrap; }
+
+.row.wrap { flex-wrap: wrap; }

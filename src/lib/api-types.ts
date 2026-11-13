@@ -22,7 +22,9 @@ export interface Summary {
     todayPnl: string;
     unsettled: string;
   };
-  settings: { profitTargetPct: number; stopLossPct: number; dailyLossPct: number; orderCap: number };
+  settings: { profitTargetPct: number; stopLossPct: number; dailyLossPct: number; orderCap: number; tradingCapital: number };
+  tradingCapital?: TradingCapitalView;
+  positions?: PositionView[];
   top10: Array<{ symbol: string; bid: string; ask: string; last: string; tradable: boolean }>;
 }
 
@@ -70,9 +72,86 @@ export interface SimulatorView {
   clock: string;
   quoteSource: "recorded" | "robinhood";
   selectedRuleIds: string[];
-  positions: Array<{ symbol: string; quantity: string; avgCost: string; last: string; marketValue: string; pnl: string; buyRule?: string; sellRule?: string }>;
+  tradingCapital?: TradingCapitalView;
+  positions: PositionView[];
   orders: Array<{ symbol: string; side: string; type: string; quantity: string; status: string; role: string; price: string }>;
   trades: Array<{ symbol: string; quantity: string; entry: string; exit: string; pnl: string; reason: string; at: number }>;
   events: Array<{ action: string; detail: string; at?: number }>;
   proposals: Array<{ symbol: string; verdict: string; message: string; at: number }>;
+}
+
+
+export interface TradingCapitalView {
+  saved: number;
+  savedUsd: string;
+  balance: number;
+  balanceUsd: string;
+  effective: number;
+  effectiveUsd: string;
+  warn: boolean;
+  exposure: number;
+  exposureUsd: string;
+  paused: boolean;
+  presets: Array<{ pct: number; dollars: number }>;
+}
+
+export interface PositionTradeView {
+  id: string;
+  side: string;
+  quantity: string;
+  price: string;
+  status: string;
+  session: string;
+  sizeReason: string;
+  exitReason?: string;
+  at: number;
+}
+
+export interface PositionView {
+  id: string;
+  symbol: string;
+  mode: "live" | "sim";
+  status: string;
+  quantity: string;
+  avgCost: string;
+  last: string;
+  marketValue: string;
+  pnl: string;
+  tradingCapital: string;
+  profitTargetPct: number;
+  stopLossPct: number;
+  buyRule?: string;
+  sellRule?: string;
+  trades: PositionTradeView[];
+}
+
+export interface ReviewScreen {
+  reviews: Array<{
+    positionId: string;
+    symbol: string;
+    mode: "live" | "sim";
+    closedAt: number;
+    pnl: string;
+    pnlPct: string;
+    holdMinutes: number;
+    exitType: string;
+    session: string;
+    addsCount: number;
+    addsHelped?: boolean;
+    botNote: string;
+    userNote: string;
+    buyRule?: string;
+    sellRule?: string;
+  }>;
+  ruleScores: Array<{
+    rule: string;
+    mode: string;
+    trades: number;
+    winRate: number | null;
+    avgPnlPct: number | null;
+    worstLoss: number | null;
+    netAfterCosts: number | null;
+  }>;
+  bestSignals: Array<{ name: string; id: string; winRate: number | null; avgPnl: number | null; sample: number }>;
+  worstSignals: Array<{ name: string; id: string; winRate: number | null; avgPnl: number | null; sample: number }>;
 }

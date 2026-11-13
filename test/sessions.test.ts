@@ -101,6 +101,9 @@ function emptyState(): SimState {
     spyBars: [],
     spyLast: 600,
     spyPreviousClose: 595,
+    tradingCapital: 20000,
+    pendingLegs: [],
+    closedThisCycle: [],
   };
 }
 

@@ -3,6 +3,7 @@ import { quoteIsStale, spreadRatio, MAX_SPREAD } from "./exits.js";
 import { buildEntryBundle, type EntryBundle } from "./orders.js";
 import { roundMoney } from "./money.js";
 import { remainingRoom, sizeAdd, sizeStarter } from "./sizing.js";
+import { exposureBlocksNewBuy } from "./capital.js";
 
 export interface HeldPosition {
   symbol: string;
@@ -41,6 +42,8 @@ export interface GuardContext {
   addStrength?: number;
   audience?: "simulator" | "live";
   hasProvenBuyRule?: boolean;
+  tradingCapital?: number;
+  openExposure?: number;
 }
 
 export interface Verdict {
@@ -65,6 +68,7 @@ const ORDER: string[] = [
   "spread",
   "daily_loss",
   "order_cap",
+  "capital",
   "proven",
   "cap",
   "stop",
@@ -106,8 +110,8 @@ export function validateNewBuy(ctx: GuardContext): Verdict {
   if (!/^[A-Z]{1,5}$/.test(symbol)) {
     return fail("symbol", "Symbol must be 1 to 5 letters.");
   }
-  if (!validExitPct(ctx.profitTargetPct) || !validExitPct(ctx.stopLossPct) || ctx.dailyLossPct < 0.1 || ctx.dailyLossPct > 5 || ctx.orderCap < 1 || ctx.orderCap > 1000) {
-    return fail("settings", "Profit target and stop-loss must be positive percents no greater than 100. Daily loss stop or the order cap is outside its allowed range.");
+  if (!validExitPct(ctx.profitTargetPct) || !validExitPct(ctx.stopLossPct) || !validExitPct(ctx.dailyLossPct) || ctx.orderCap < 1 || ctx.orderCap > 1000) {
+    return fail("settings", "Profit target, stop-loss, and the daily loss stop must be positive percents no greater than 100. The order cap is outside its allowed range.");
   }
   const quote = ctx.quote;
   if (!quote || quote.symbol.toUpperCase() !== symbol || !quote.tradable || !(quote.ask > 0)) {
@@ -139,12 +143,16 @@ export function validateNewBuy(ctx: GuardContext): Verdict {
     return fail("spread", "The bid-ask spread is wider than 1%. New buys wait for a tighter market.");
   }
   const loss = dailyLossAmount(ctx.equity, ctx.dayStartEquity);
-  const lossCap = roundMoney(ctx.dayStartEquity * (ctx.dailyLossPct / 100));
+  const lossBasis = ctx.tradingCapital && ctx.tradingCapital > 0 ? ctx.tradingCapital : ctx.dayStartEquity;
+  const lossCap = roundMoney(lossBasis * (ctx.dailyLossPct / 100));
   if (loss >= lossCap && lossCap > 0) {
     return fail("daily_loss", "Daily loss stop is hit. New buys are paused. Protective sells still run.");
   }
   if (ctx.ordersToday >= ctx.orderCap) {
     return fail("order_cap", "The daily order cap is reached. New buys wait until tomorrow. Protective sells still run.");
+  }
+  if (ctx.tradingCapital != null && ctx.openExposure != null && exposureBlocksNewBuy(ctx.tradingCapital, ctx.openExposure, 0)) {
+    return fail("capital", "Open exposure is at or above Trading capital. New buys wait until exposure is back under.");
   }
   if (ctx.audience === "live" && ctx.hasProvenBuyRule === false) {
     return fail("proven", "Live new buys stay idle until a buy rule is marked Proven.");
@@ -161,6 +169,9 @@ export function validateNewBuy(ctx: GuardContext): Verdict {
     if (sized.error === "strength") return fail("cap", "Signals are not strong enough to add.");
     if (session !== "regular") return fail("cap", "A whole share costs more than the starter, the remaining room under the 10% cap, or available buying power.");
     return fail("cap", "This buy does not fit under the 10% position cap or available buying power. The app never borrows.");
+  }
+  if (ctx.tradingCapital != null && ctx.openExposure != null && exposureBlocksNewBuy(ctx.tradingCapital, ctx.openExposure, sized.notional)) {
+    return fail("capital", "This buy would take open exposure above Trading capital.");
   }
   const bundle = buildEntryBundle({
     accountNumber: "pending",
