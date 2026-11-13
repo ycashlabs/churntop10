@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { SessionView, Summary } from "../lib/api-types";
+import { parseCallbackInput } from "../lib/oauth";
 import { getPendingConnect, getSession, getSummary, loadCsrf, post, registerPasskey, signIn } from "./api";
 
 type SettingsDraft = Summary["settings"];
@@ -216,6 +217,7 @@ function SettingsPage({ summary, onRun }: { summary: Summary; onRun: (action: ()
   const [showPaste, setShowPaste] = useState(false);
   const [pending, setPending] = useState(false);
   const [pendingUntil, setPendingUntil] = useState("");
+  const [tabBlocked, setTabBlocked] = useState(false);
   function setConnectUrl(url: string) {
     if (url) sessionStorage.setItem(CONNECT_URL_KEY, url);
     else sessionStorage.removeItem(CONNECT_URL_KEY);
@@ -279,58 +281,129 @@ function SettingsPage({ summary, onRun }: { summary: Summary; onRun: (action: ()
         {summary.robinhoodStatus === "not_connected" && <>Not connected.</>}
         {summary.robinhoodStatus === "error" && <span className="error">{summary.robinhoodError ?? "Robinhood could not be read."}</span>}
       </p>
-      <div className="row">
-        <button type="button" onClick={() => {
-          setShowPaste(true);
-          setPasted("");
-          onRun(async () => {
-            const body = await post("/api/robinhood/connect") as Summary & { url?: string };
-            if (body.url) {
-              setConnectUrl(body.url);
-              sessionStorage.setItem(CONNECT_AT_KEY, String(Date.now()));
+      {summary.robinhoodStatus !== "connected" || showPaste || pending || connectUrl ? (
+        <RobinhoodConnect
+          reconnect={summary.robinhoodStatus !== "not_connected"}
+          connectUrl={connectUrl}
+          tabBlocked={tabBlocked}
+          pending={pending}
+          pendingUntil={pendingUntil}
+          pasted={pasted}
+          setPasted={setPasted}
+          onStart={() => {
+            setShowPaste(true);
+            setPasted("");
+            onRun(async () => {
+              const body = await post("/api/robinhood/connect") as Summary & { url?: string };
+              if (body.url) {
+                setConnectUrl(body.url);
+                sessionStorage.setItem(CONNECT_AT_KEY, String(Date.now()));
+                // Opening a tab before the passkey prompt would steal focus and fail the passkey, so open it after.
+                // If the browser blocks it, the panel shows a big "Open Robinhood" button that is a fresh click.
+                // "noopener" in the features makes window.open return null even on success, so drop the opener by hand.
+                const tab = window.open(body.url, "_blank");
+                if (tab) {
+                  try { tab.opener = null; } catch { /* already cross-origin */ }
+                }
+                setTabBlocked(!tab);
+              }
+              await loadPending();
+              return undefined;
+            });
+          }}
+          onFinish={(value) => onRun(async () => {
+            try {
+              await post("/api/robinhood/complete", { callbackUrl: value });
+              clearConnect();
+            } catch (err) {
+              setShowPaste(true);
+              throw err;
+            } finally {
+              await loadPending();
             }
-            await loadPending();
-            return undefined;
-          });
-        }}>{summary.robinhoodStatus === "not_connected" ? "Connect Robinhood" : "Reconnect Robinhood"}</button>
-        {!showPaste && !pending && !connectUrl && <button className="quiet" type="button" onClick={() => setShowPaste(true)}>Paste Robinhood address</button>}
-        {summary.robinhoodStatus !== "not_connected" && (
+          })}
+          onClose={summary.robinhoodStatus === "connected" ? clearConnect : undefined}
+        />
+      ) : (
+        <div className="row">
+          <button type="button" onClick={() => setShowPaste(true)}>Reconnect Robinhood</button>
+        </div>
+      )}
+      {summary.robinhoodStatus !== "not_connected" && (
+        <div className="row">
           <button className="quiet" type="button" onClick={() => onRun(async () => {
             if (!window.confirm("Disconnect Robinhood? The app forgets its saved sign-in. Robinhood orders are not touched.")) return undefined;
             clearConnect();
             return post("/api/robinhood/disconnect");
           })}>Disconnect Robinhood</button>
-        )}
-      </div>
-      {(showPaste || pending || connectUrl) && (
-        <div className="card" id="robinhood-paste">
-          <h3>Paste Robinhood address</h3>
-          {pending && <p>A Robinhood sign-in is waiting{pendingUntil ? ` until ${new Date(pendingUntil).toLocaleTimeString()}` : ""}. Paste the address to finish.</p>}
-          <ol>
-            <li>{connectUrl ? <a href={connectUrl} target="_blank" rel="noopener noreferrer">Open Robinhood sign-in</a> : "Click Connect Robinhood to open Robinhood sign-in"} and approve.</li>
-            <li>Robinhood then sends you to a page that won't load (it starts with <code>http://127.0.0.1:47621/callback</code>). That's expected.</li>
-            <li>Copy the whole address from that tab's address bar and paste it here within 10 minutes.</li>
-          </ol>
-          <label>Address from the page that didn't load
-            <input value={pasted} onChange={(event) => setPasted(event.target.value)} placeholder="http://127.0.0.1:47621/callback?code=…" autoComplete="off" spellCheck={false} />
-          </label>
-          <div className="row">
-            <button type="button" disabled={!pasted.trim()} onClick={() => onRun(async () => {
-              try {
-                await post("/api/robinhood/complete", { callbackUrl: pasted });
-                clearConnect();
-              } catch (err) {
-                setShowPaste(true);
-                throw err;
-              } finally {
-                await loadPending();
-              }
-            })}>Finish connecting</button>
-            <button className="quiet" type="button" onClick={clearConnect}>Close</button>
-          </div>
         </div>
       )}
       <p>Saving caps, editing the Top 10, switching to Live, and connecting or disconnecting Robinhood each ask for the passkey again. The kill switch does not.</p>
     </section>
+  );
+}
+
+function RobinhoodConnect(props: {
+  reconnect: boolean;
+  connectUrl: string;
+  tabBlocked: boolean;
+  pending: boolean;
+  pendingUntil: string;
+  pasted: string;
+  setPasted: (value: string) => void;
+  onStart: () => void;
+  onFinish: (value: string) => void;
+  onClose?: () => void;
+}) {
+  const { connectUrl, pending, pendingUntil, pasted, setPasted, onStart, onFinish, onClose } = props;
+  const [hint, setHint] = useState("");
+  const started = !!connectUrl || pending;
+  function accept(value: string, auto: boolean) {
+    setPasted(value);
+    if (!value.trim()) { setHint(""); return; }
+    const parsed = parseCallbackInput(value);
+    if (!parsed.ok) { setHint(parsed.error); return; }
+    setHint("");
+    if (auto) onFinish(value);
+  }
+  return (
+    <div className="card" id="robinhood-paste">
+      <h3>{props.reconnect ? "Reconnect Robinhood" : "Connect Robinhood"} in 3 steps</h3>
+      <ol className="steps">
+        <li>
+          <p><strong>Open Robinhood.</strong> You confirm with your passkey, then Robinhood opens in a new tab.</p>
+          <div className="row">
+            {connectUrl && props.tabBlocked ? (
+              <a className="button" href={connectUrl} target="_blank" rel="noopener noreferrer">Open Robinhood sign-in</a>
+            ) : (
+              <button type="button" onClick={onStart}>{started ? "Start over" : "Open Robinhood sign-in"}</button>
+            )}
+            {connectUrl && !props.tabBlocked && <a href={connectUrl} target="_blank" rel="noopener noreferrer">Robinhood tab didn't open? Click here.</a>}
+          </div>
+        </li>
+        <li>
+          <p><strong>Log in and tap Approve.</strong> Robinhood then shows an error page such as <em>"This site can't be reached"</em> or <em>"127.0.0.1 refused to connect"</em>. <strong>That is expected</strong>: the sign-in worked and the code is in that page's address.</p>
+        </li>
+        <li>
+          <p><strong>Copy that page's address and paste it below.</strong> Click the address bar, select all, copy, and paste here. It connects as soon as you paste.</p>
+          {pending && <p className="muted">Waiting for your paste{pendingUntil ? ` until ${new Date(pendingUntil).toLocaleTimeString()}` : ""}.</p>}
+          <label>Address of the error page
+            <input
+              value={pasted}
+              onChange={(event) => accept(event.target.value, false)}
+              onPaste={(event) => { event.preventDefault(); accept(event.clipboardData.getData("text"), true); }}
+              placeholder="http://127.0.0.1:47621/callback?code=…"
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </label>
+          {hint && <p className="error">{hint}</p>}
+          <div className="row">
+            <button type="button" disabled={!pasted.trim()} onClick={() => accept(pasted, true)}>Finish connecting</button>
+            {onClose && <button className="quiet" type="button" onClick={onClose}>Cancel</button>}
+          </div>
+        </li>
+      </ol>
+    </div>
   );
 }

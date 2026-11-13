@@ -22,6 +22,7 @@ import {
   protectedResourceUrls,
   registrationBody,
   resourceMetadataFromHeader,
+  tokenExchangeMessage,
   tokenSetFromJson,
   tradingMcpUrl,
   type AuthServerMetadata,
@@ -354,8 +355,10 @@ async function finishConnect(c: AppContext, input: { code: string; state: string
   const form = new URLSearchParams({ grant_type: "authorization_code", code: input.code, redirect_uri: saved.redirect_uri, client_id: client.client_id, code_verifier: saved.verifier, resource: client.resource });
   const response = await fetch(client.token_endpoint, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" }, body: form });
   if (!response.ok) {
-    console.log(redactJson({ event: "robinhood_token_exchange_failed", status: response.status }));
-    return { ok: false, error: `Robinhood refused the sign-in code (HTTP ${response.status}). Click Connect Robinhood again.` };
+    const text = await response.text().catch(() => "");
+    const message = tokenExchangeMessage(response.status, text);
+    console.log(redactJson({ event: "robinhood_token_exchange_failed", status: response.status, message }));
+    return { ok: false, error: message };
   }
   const tokens = tokenSetFromJson(await response.json());
   if (!tokens) return { ok: false, error: "Robinhood did not return an access token." };
