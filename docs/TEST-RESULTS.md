@@ -1,8 +1,8 @@
 # Conformance results — Churn Top 10
 
-Run at Nov 13, 2026, 8:39 AM America/Chicago against the current tree. Checks follow [TEST-PLAN.md](TEST-PLAN.md) and [DESIGN.md](DESIGN.md). Headless UI checks do not capture screenshots.
+Run at Nov 13, 2026, 8:52 AM America/Chicago against the current tree. Checks follow [TEST-PLAN.md](TEST-PLAN.md) and [DESIGN.md](DESIGN.md). Headless UI checks do not capture screenshots.
 
-Summary: **53 PASS**, **1 FAIL**, **9 NOT BUILT** (63 tests).
+Summary: **54 PASS**, **0 FAIL**, **9 NOT BUILT** (63 tests).
 
 | Test ID | Area | Test description | Result | Failure reason |
 | --- | --- | --- | --- | --- |
@@ -12,7 +12,7 @@ Summary: **53 PASS**, **1 FAIL**, **9 NOT BUILT** (63 tests).
 | S-04 | Schema | v3 relationships: rules, versions, signals, positions, trades | PASS |  |
 | S-05 | Schema | app_settings seed columns include legacy pdt_limit and max_order_pct | PASS |  |
 | S-06 | Schema | trade_signals persists trade_id, signal_id, value, threshold, fired, name, and reason | PASS |  |
-| S-07 | Schema | trade_signals has name and reason (0006) on this branch / dev | PASS | 0006 exists in the repo. Applied and recorded on dev D1 at 8:39:59 AM CST (America/Chicago); PRAGMA shows name and reason. Not applied on prod. |
+| S-07 | Schema | trade_signals has name and reason (0006) on this branch / dev | PASS | 0006 exists in the repo. Applied and recorded on dev D1 at 8:39:59 AM CST (America/Chicago) and on prod D1 at 8:45:27 AM CST; PRAGMA shows name and reason on both. |
 | ST-01 | Settings | Defaults: profit/stop/daily loss 1%, order cap 100, capital 10000, view_only, not killed | PASS |  |
 | ST-02 | Settings | Percents: finite, > 0, ≤ 100; exact server messages from DESIGN §4 | PASS |  |
 | ST-03 | Settings | Order cap 1–1000; trading capital > 0, ≤ 1e9; exact messages | PASS |  |
@@ -51,15 +51,15 @@ Summary: **53 PASS**, **1 FAIL**, **9 NOT BUILT** (63 tests).
 | H-04 | Holdings / live / simulator | Simulator auto-start: tick when no open sim position | PASS |  |
 | H-05 | Holdings / live / simulator | Every buy/add/exit writes trade_signals (id, name, value, threshold, fired, reason) when signals were computed; positionViews forwards them | PASS | simulator API returned 10 position trade(s); 10 carried signals (id, name, value, threshold, fired, reason) |
 | H-07 | Holdings / live / simulator | Live proposeLiveEntries requires first-buy signals to fire before placing, matching the simulator | PASS |  |
-| H-06 | Holdings / live / simulator | Prod NVDA 7:55 fill has trade_signals rows | FAIL | Prod trade 3989afa2-7976-4b28-b703-4c5e0352a9a6 still has 0 trade_signals rows after the 8:30:59 AM CST cron. Prod 0005 is applied (8:26:53 AM CST). A dry-run (apply=false) planned 3 rows for this trade and 3 for the 8:00 AM CST add 5aa49ca9-f1c4-4622-aef6-8e1f8f4a0359 (also 0 rows); nothing was inserted. Applying the backfill waits for a second explicit OK. |
+| H-06 | Holdings / live / simulator | Prod NVDA 7:55 fill has trade_signals rows | PASS | Owner approved the apply at 8:43 AM CST. After prod 0006 (8:45:27 AM CST) a dry-run with name and reason planned the same 6 rows for trades 3989afa2-7976-4b28-b703-4c5e0352a9a6 and 5aa49ca9-f1c4-4622-aef6-8e1f8f4a0359; apply=true inserted 6 (changes 1 each). Each trade has 3 rows including name and reason. A rerun planned 0 (alreadyHadSignals). |
 | V-01 | Review / Access / security | Review lists imported open holdings with exitType imported and the imported bot note | PASS | imported holding visible on Review |
 | A-01 | Review / Access / security | Access owner-only; Worker re-checks JWT when ACCESS_ENFORCE=1; no bypass or service token in repo config | PASS | Access apps Churn Top 10 prod and dev each have a single Owner only allow policy for tom2258@gmail.com. No exclude/require, no bypass or service token. Worker ACCESS_ENFORCE is 1 on both. |
 | A-02 | Review / Access / security | Passkey session 12 hours; step-up 5 minutes; Sell All and Edit capital are not step-up | PASS |  |
 | A-03 | Review / Access / security | submitGatedTool throws unless gate is 1; cancel/modify always refused | PASS |  |
 | A-04 | Review / Access / security | Account numbers masked to last 4; no eval / new Function in the Worker bundle | PASS |  |
-| A-05 | Review / Access / security | Unauthenticated prod and dev hosts 302 to Access | PASS | Unauthenticated GET / and /api/health on top10.ycashlabs.com and top10-dev.ycashlabs.com return HTTP 302 to dawn-rice-07a4.cloudflareaccess.com with kids b05d3bc5… (prod) and 3826fb97… (dev). |
+| A-05 | Review / Access / security | Unauthenticated prod and dev hosts 302 to Access | PASS | Unauthenticated GET / and /api/health on top10.ycashlabs.com and top10-dev.ycashlabs.com return HTTP 302 to dawn-rice-07a4.cloudflareaccess.com with kids b05d3bc5… (prod) and 3826fb97… (dev). Checked on prod at 8:45:38 AM CST after the PR #10 upload and reconfirmed at 8:52:49 AM CST. |
 | A-06 | Review / Access / security | Dev and prod ALLOW_LIVE_TRADING is 0 | PASS | Worker settings: ALLOW_LIVE_TRADING is 0 on churntop10-prod and churntop10-dev. TOKEN_KEY present as secret_text on both. |
-| A-07 | Review / Access / security | Cron is */5 * * * * on both Workers; no assets binding | PASS | Both Workers cron */5 * * * *; no ASSETS binding on the deployed scripts (has_assets false). Confirmed again after the 8:13 AM CST dev upload and the 8:27:02 AM CST prod upload. |
+| A-07 | Review / Access / security | Cron is */5 * * * * on both Workers; no assets binding | PASS | Both Workers cron */5 * * * *; no ASSETS binding on the deployed scripts (has_assets false). Confirmed again after the 8:40:47 AM CST dev upload and the 8:45:31 AM CST prod upload. |
 | P-01 | Planned | AI-created Experimenting rules | NOT BUILT | Planned in DESIGN §9, not implemented. |
 | P-02 | Planned | AI approve/retire suggestions (user always decides) | NOT BUILT | Planned in DESIGN §9, not implemented. |
 | P-03 | Planned | Rule points 0–100 with 40/25/20/15 weights | NOT BUILT | Planned in DESIGN §9, not implemented. |

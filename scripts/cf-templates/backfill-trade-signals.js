@@ -37,9 +37,11 @@ async () => {
     if (!Array.isArray(value)) return [];
     return value.filter((item) => item && typeof item.id === "string").map((item) => ({
       id: item.id,
+      name: typeof item.name === "string" ? item.name : item.id,
       value: typeof item.value === "number" ? item.value : null,
       threshold: typeof item.threshold === "number" ? item.threshold : (item.id in SIGNAL_THRESHOLDS ? SIGNAL_THRESHOLDS[item.id] : null),
       fired: item.fired === true,
+      reason: typeof item.reason === "string" ? item.reason : "",
     }));
   }
   const BUY = new Set(["sim_entry", "sim_add", "live_order"]);
@@ -69,11 +71,11 @@ async () => {
   if (!apply) return { dryRun: true, count: planned.length, rows: planned };
   const results = [];
   for (const row of planned) {
-    const sql = "INSERT INTO trade_signals (trade_id, signal_id, value, passed, threshold) VALUES (?, ?, ?, ?, ?) ON CONFLICT (trade_id, signal_id) DO UPDATE SET value = excluded.value, passed = excluded.passed, threshold = excluded.threshold;";
+    const sql = "INSERT INTO trade_signals (trade_id, signal_id, value, passed, threshold, name, reason) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (trade_id, signal_id) DO UPDATE SET value = excluded.value, passed = excluded.passed, threshold = excluded.threshold, name = excluded.name, reason = excluded.reason;";
     const res = await cloudflare.request({
       method: "POST",
       path: `/accounts/${a}/d1/database/${db}/query`,
-      body: { sql, params: [row.tradeId, row.id, row.value == null ? null : String(row.value), row.fired ? "1" : "0", row.threshold == null ? null : String(row.threshold)] },
+      body: { sql, params: [row.tradeId, row.id, row.value == null ? null : String(row.value), row.fired ? "1" : "0", row.threshold == null ? null : String(row.threshold), row.name, row.reason] },
     });
     results.push({ tradeId: row.tradeId, signalId: row.id, ok: res.success, errors: res.errors });
   }

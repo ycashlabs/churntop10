@@ -39,8 +39,10 @@ for (const row of rows) {
   const fired = row.fired ? 1 : 0;
   const tradeId = row.tradeId.replaceAll("'", "''");
   const signalId = row.signalId.replaceAll("'", "''");
+  const name = (row.name ?? "").replaceAll("'", "''");
+  const reason = (row.reason ?? "").replaceAll("'", "''");
   console.log(
-    `INSERT INTO trade_signals (trade_id, signal_id, value, passed, threshold) VALUES ('${tradeId}', '${signalId}', ${value}, ${fired}, ${threshold}) ON CONFLICT (trade_id, signal_id) DO UPDATE SET value = excluded.value, passed = excluded.passed, threshold = excluded.threshold;`,
+    `INSERT INTO trade_signals (trade_id, signal_id, value, passed, threshold, name, reason) VALUES ('${tradeId}', '${signalId}', ${value}, ${fired}, ${threshold}, '${name}', '${reason}') ON CONFLICT (trade_id, signal_id) DO UPDATE SET value = excluded.value, passed = excluded.passed, threshold = excluded.threshold, name = excluded.name, reason = excluded.reason;`,
   );
 }
 void defaultThreshold;
