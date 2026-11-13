@@ -135,25 +135,37 @@ export type CallbackInput =
   | { ok: true; code: string; state: string; iss?: string }
   | { ok: false; error: string };
 
-/** Reads the loopback address the user pasted (full URL, or just the query string). */
+/**
+ * Reads the loopback address the user pasted: the full URL, the URL without
+ * "http://" (some browsers copy or show it that way), the URL with stray text
+ * or quotes around it, or just the query string.
+ */
 export function parseCallbackInput(text: string): CallbackInput {
-  const trimmed = (text ?? "").trim();
+  let trimmed = (text ?? "").trim().replace(/^["'<]+|["'>]+$/g, "");
   if (!trimmed || trimmed.length > 4096) return { ok: false, error: "Paste the full address from the page Robinhood sent you to." };
+  const expected = new URL(LOOPBACK_REDIRECT_URI);
+  const bare = `${expected.host}${expected.pathname}`;
+  const at = trimmed.toLowerCase().indexOf(bare);
+  if (at >= 0) {
+    // Keep from the loopback host on, drop anything after the first whitespace, and restore the scheme.
+    trimmed = `http://${trimmed.slice(at).split(/\s/)[0]}`;
+  }
   let params: URLSearchParams;
-  if (/^https?:\/\//i.test(trimmed)) {
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
     let url: URL;
     try {
       url = new URL(trimmed);
     } catch {
       return { ok: false, error: "That address could not be read. Copy the whole address bar and try again." };
     }
-    const expected = new URL(LOOPBACK_REDIRECT_URI);
     if (url.origin !== expected.origin || url.pathname !== expected.pathname) {
       return { ok: false, error: `That is not the Robinhood return address. It should start with ${LOOPBACK_REDIRECT_URI}.` };
     }
     params = url.searchParams;
-  } else {
+  } else if (/^[?#]?[^\s/?#]*=/.test(trimmed)) {
     params = new URLSearchParams(trimmed.replace(/^[?#]/, ""));
+  } else {
+    return { ok: false, error: `That is not the Robinhood return address. It should start with ${LOOPBACK_REDIRECT_URI}.` };
   }
   const error = params.get("error");
   if (error) {
@@ -248,6 +260,20 @@ export function refreshDue(expiresAt: string | undefined, lifetimeSecs: number |
   if (Number.isNaN(expiry)) return false;
   const lead = refreshLeadSecs(lifetimeSecs ?? 3600) * 1000;
   return now + lead >= expiry;
+}
+
+/** Plain-words message for a failed code exchange; `error` is Robinhood's OAuth error code (never a secret). */
+export function tokenExchangeMessage(status: number, body: string): string {
+  let code = "";
+  try {
+    const parsed = JSON.parse(body) as { error?: unknown };
+    if (typeof parsed.error === "string") code = parsed.error.slice(0, 64);
+  } catch {
+    code = "";
+  }
+  if (code === "invalid_grant") return "Robinhood says this sign-in code was already used or has expired. Click Connect Robinhood and try again.";
+  if (code === "invalid_client") return "Robinhood did not recognise this app's sign-in client. Click Connect Robinhood and try again.";
+  return `Robinhood refused the sign-in code (HTTP ${status}${code ? `, ${code}` : ""}). Click Connect Robinhood and try again.`;
 }
 
 export function refreshWasRejected(status: number, body: string): boolean {

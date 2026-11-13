@@ -6,6 +6,7 @@ import {
   issuerMatches,
   parseAuthServerMetadata,
   parseCallbackInput,
+  tokenExchangeMessage,
   parseProtectedResource,
   parseRegistration,
   registrationBody,
@@ -146,5 +147,33 @@ describe("pasted callback contract", () => {
     expect(issuerMatches(undefined, iss, true)).toBe(false);
     expect(issuerMatches(undefined, iss, false)).toBe(true);
     expect(issuerMatches("https://evil.example.com", iss, false)).toBe(false);
+  });
+});
+
+describe("pasted Robinhood address, real-world copies", () => {
+  const iss = "https://agent.robinhood.com/mcp/trading";
+  const full = `${LOOPBACK_REDIRECT_URI}?code=abc123&state=s1&iss=${encodeURIComponent(iss)}`;
+  it("accepts the address without http://", () => {
+    expect(parseCallbackInput(full.replace("http://", ""))).toEqual({ ok: true, code: "abc123", state: "s1", iss });
+  });
+  it("accepts the address with quotes, brackets or text around it", () => {
+    expect(parseCallbackInput(`"${full}"`)).toEqual({ ok: true, code: "abc123", state: "s1", iss });
+    expect(parseCallbackInput(`<${full}>`)).toEqual({ ok: true, code: "abc123", state: "s1", iss });
+    expect(parseCallbackInput(`127.0.0.1 refused to connect. ${full} ERR_CONNECTION_REFUSED`)).toEqual({ ok: true, code: "abc123", state: "s1", iss });
+  });
+  it("still rejects other hosts, ports and random text", () => {
+    expect(parseCallbackInput(full.replace("47621", "1234")).ok).toBe(false);
+    expect(parseCallbackInput("localhost:47621/callback?code=a&state=b").ok).toBe(false);
+    expect(parseCallbackInput("hello there").ok).toBe(false);
+    expect(parseCallbackInput("https://robinhood.com/oauth?code=a&state=b").ok).toBe(false);
+  });
+});
+
+describe("token exchange error messages", () => {
+  it("explains Robinhood's OAuth error codes in plain words without echoing the body", () => {
+    expect(tokenExchangeMessage(400, '{"error":"invalid_grant"}')).toMatch(/already used or has expired/);
+    expect(tokenExchangeMessage(401, '{"error":"invalid_client"}')).toMatch(/did not recognise/);
+    expect(tokenExchangeMessage(500, "<html>oops</html>")).toBe("Robinhood refused the sign-in code (HTTP 500). Click Connect Robinhood and try again.");
+    expect(tokenExchangeMessage(400, '{"error":"invalid_request","error_description":"secret-ish"}')).not.toMatch(/secret-ish/);
   });
 });
