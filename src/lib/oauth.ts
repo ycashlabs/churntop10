@@ -64,6 +64,114 @@ export function resourceMetadataFromHeader(header: string): string | undefined {
   return token || undefined;
 }
 
+/**
+ * Robinhood's shared public client only accepts loopback redirects (RFC 8252).
+ * Registration echoes any redirect_uris but does not allow-list them, so a web
+ * callback such as https://top10-dev.ycashlabs.com/api/robinhood/callback is
+ * refused on robinhood.com. Nothing listens on this port: the user pastes the
+ * address the browser lands on back into the app.
+ */
+export const LOOPBACK_REDIRECT_URI = "http://127.0.0.1:47621/callback";
+
+export interface AuthServerMetadata {
+  issuer: string;
+  authorizationEndpoint: string;
+  tokenEndpoint: string;
+  registrationEndpoint: string;
+  scope: string;
+  issRequired: boolean;
+}
+
+function requiredString(record: Record<string, unknown>, key: string): string {
+  const value = record[key];
+  if (typeof value !== "string" || !value.trim()) throw new Error(`Robinhood sign-in metadata is missing ${key}.`);
+  return value.trim();
+}
+
+function httpsUrl(value: string, key: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(`Robinhood sign-in metadata has an invalid ${key}.`);
+  }
+  if (parsed.protocol !== "https:") throw new Error(`Robinhood sign-in metadata has a non-https ${key}.`);
+  return value;
+}
+
+export function parseProtectedResource(value: unknown): { issuer: string; resource: string } {
+  if (!value || typeof value !== "object") throw new Error("Robinhood resource metadata was not an object.");
+  const record = value as Record<string, unknown>;
+  const servers = record.authorization_servers;
+  const first = Array.isArray(servers) && typeof servers[0] === "string" ? servers[0].trim() : "";
+  if (!first) throw new Error("Robinhood did not publish an authorization server.");
+  return { issuer: httpsUrl(first.replace(/\/+$/, ""), "authorization_servers"), resource: httpsUrl(requiredString(record, "resource"), "resource") };
+}
+
+export function parseAuthServerMetadata(value: unknown): AuthServerMetadata {
+  if (!value || typeof value !== "object") throw new Error("Robinhood sign-in metadata was not an object.");
+  const record = value as Record<string, unknown>;
+  const methods = record.code_challenge_methods_supported;
+  if (!Array.isArray(methods) || !methods.includes("S256")) throw new Error("Robinhood sign-in does not list PKCE S256.");
+  const scopes = Array.isArray(record.scopes_supported) ? record.scopes_supported.filter((item): item is string => typeof item === "string" && !!item) : [];
+  return {
+    issuer: httpsUrl(requiredString(record, "issuer"), "issuer").replace(/\/+$/, ""),
+    authorizationEndpoint: httpsUrl(requiredString(record, "authorization_endpoint"), "authorization_endpoint"),
+    tokenEndpoint: httpsUrl(requiredString(record, "token_endpoint"), "token_endpoint"),
+    registrationEndpoint: httpsUrl(requiredString(record, "registration_endpoint"), "registration_endpoint"),
+    scope: scopes[0] ?? "internal",
+    issRequired: record.authorization_response_iss_parameter_supported === true,
+  };
+}
+
+export function parseRegistration(value: unknown): { clientId: string } {
+  if (!value || typeof value !== "object") throw new Error("Robinhood registration did not return an object.");
+  const clientId = (value as Record<string, unknown>).client_id;
+  if (typeof clientId !== "string" || !clientId.trim()) throw new Error("Robinhood did not return a client id.");
+  return { clientId: clientId.trim() };
+}
+
+export type CallbackInput =
+  | { ok: true; code: string; state: string; iss?: string }
+  | { ok: false; error: string };
+
+/** Reads the loopback address the user pasted (full URL, or just the query string). */
+export function parseCallbackInput(text: string): CallbackInput {
+  const trimmed = (text ?? "").trim();
+  if (!trimmed || trimmed.length > 4096) return { ok: false, error: "Paste the full address from the page Robinhood sent you to." };
+  let params: URLSearchParams;
+  if (/^https?:\/\//i.test(trimmed)) {
+    let url: URL;
+    try {
+      url = new URL(trimmed);
+    } catch {
+      return { ok: false, error: "That address could not be read. Copy the whole address bar and try again." };
+    }
+    const expected = new URL(LOOPBACK_REDIRECT_URI);
+    if (url.origin !== expected.origin || url.pathname !== expected.pathname) {
+      return { ok: false, error: `That is not the Robinhood return address. It should start with ${LOOPBACK_REDIRECT_URI}.` };
+    }
+    params = url.searchParams;
+  } else {
+    params = new URLSearchParams(trimmed.replace(/^[?#]/, ""));
+  }
+  const error = params.get("error");
+  if (error) {
+    const detail = params.get("error_description");
+    return { ok: false, error: `Robinhood said: ${detail ? `${error} (${detail.slice(0, 200)})` : error}` };
+  }
+  const code = params.get("code")?.trim();
+  const state = params.get("state")?.trim();
+  if (!code || !state) return { ok: false, error: "That address has no sign-in code. Approve on Robinhood first, then copy the address." };
+  const iss = params.get("iss")?.trim() || undefined;
+  return { ok: true, code, state, iss };
+}
+
+export function issuerMatches(iss: string | undefined, issuer: string, required: boolean): boolean {
+  if (!iss) return !required;
+  return iss.replace(/\/+$/, "") === issuer.replace(/\/+$/, "");
+}
+
 export function registrationBody(redirectUri: string): Record<string, unknown> {
   return {
     client_name: "Churn Top 10",

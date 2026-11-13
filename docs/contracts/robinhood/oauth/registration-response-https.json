@@ -1,0 +1,8 @@
+{
+    "client_id": "LtLiNmbs9owbYfWgBlC68Z2VujIPuvGoAiSYr8xW",
+    "client_name": "Robinhood Trading",
+    "redirect_uris": [
+        "https://top10-dev.ycashlabs.com/api/robinhood/callback"
+    ],
+    "token_endpoint_auth_method": "none"
+}

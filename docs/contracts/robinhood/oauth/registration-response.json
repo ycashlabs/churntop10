@@ -1,0 +1,8 @@
+{
+    "client_id": "LtLiNmbs9owbYfWgBlC68Z2VujIPuvGoAiSYr8xW",
+    "client_name": "Robinhood Trading",
+    "redirect_uris": [
+        "http://127.0.0.1:47621/callback"
+    ],
+    "token_endpoint_auth_method": "none"
+}
