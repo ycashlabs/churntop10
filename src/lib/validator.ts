@@ -1,12 +1,14 @@
-import { businessDaysAgo, etParts, marketSession, type SessionName } from "./clock.js";
+import { marketSession, type SessionName } from "./clock.js";
 import { quoteIsStale, spreadRatio, MAX_SPREAD } from "./exits.js";
 import { buildEntryBundle, type EntryBundle } from "./orders.js";
 import { roundMoney } from "./money.js";
+import { remainingRoom, sizeAdd, sizeStarter } from "./sizing.js";
 
 export interface HeldPosition {
   symbol: string;
   quantity: number;
   openedOn: string;
+  notional?: number;
 }
 
 export interface DayTrade {
@@ -25,10 +27,9 @@ export interface GuardContext {
   dayStartEquity: number;
   profitTargetPct: number;
   stopLossPct: number;
-  maxOrderPct: number;
   dailyLossPct: number;
-  dayTrades: DayTrade[];
-  pdtLimit: number;
+  orderCap: number;
+  ordersToday: number;
   quote?: { symbol: string; bid: number; ask: number; last: number; tradable: boolean; hasBidAsk?: boolean; asOf?: string; overnightEligible?: boolean };
   quoteSource?: "recorded" | "robinhood";
   workingSymbols: string[];
@@ -36,6 +37,10 @@ export interface GuardContext {
   agenticAllowed: boolean;
   symbol: string;
   refId: string;
+  intent?: "starter" | "add";
+  addStrength?: number;
+  audience?: "simulator" | "live";
+  hasProvenBuyRule?: boolean;
 }
 
 export interface Verdict {
@@ -43,6 +48,7 @@ export interface Verdict {
   code: string;
   message: string;
   bundle?: EntryBundle;
+  sizeReason?: string;
 }
 
 const ORDER: string[] = [
@@ -58,7 +64,8 @@ const ORDER: string[] = [
   "stale",
   "spread",
   "daily_loss",
-  "pdt",
+  "order_cap",
+  "proven",
   "cap",
   "stop",
   "duplicate",
@@ -77,34 +84,15 @@ export function dailyLossAmount(equityNow: number, dayStartEquity: number): numb
   return roundMoney(Math.max(0, dayStartEquity - equityNow));
 }
 
-export function dayTradeCount(trades: DayTrade[], today: string): number {
-  const windowStart = businessDaysAgo(today, 4);
-  return trades.filter((trade) => trade.day >= windowStart && trade.day <= today).length;
-}
-
-export function sizeEntry(input: { equity: number; ask: number; profitTargetPct: number; stopLossPct: number; maxOrderPct: number; buyingPower: number }): { quantity: number; notional: number; goal: number } | { error: "cap" | "price" } {
-  if (!(input.ask > 0) || !(input.equity > 0)) return { error: "price" };
-  const goal = roundMoney(input.equity * (input.profitTargetPct / 100));
-  const cap = roundMoney(input.equity * (input.maxOrderPct / 100));
-  const room = Math.min(cap, input.buyingPower);
-  if (room <= 0) return { error: "cap" };
-  if (input.ask > room + 0.001) return { error: "cap" };
-  const move = input.stopLossPct / 100;
-  const desired = move > 0 ? goal / move : room;
-  const notional = Math.min(desired, room);
-  const quantity = Math.floor(notional / input.ask);
-  if (quantity < 1) return { error: "cap" };
-  return { quantity, notional: roundMoney(quantity * input.ask), goal };
-}
-
 /**
- * New buys only. First failing guard wins, in `guardOrder()` sequence.
+ * New buys and scale-in adds. First failing guard wins, in `guardOrder()` sequence.
  * A passing plan still includes the protective stop and the take-profit.
- * View Only is last so a sound plan can be shown without being sent.
+ * View Only is last so a sound live plan can be shown without being sent.
+ * The PDT day-trade cap is removed (FINRA Notice 26-10).
  */
 export function validateNewBuy(ctx: GuardContext): Verdict {
   if (ctx.killed) {
-    return fail("kill_switch", "Kill switch is on. New buys are stopped.");
+    return fail("kill_switch", "Sell All Positions is on. New buys are stopped.");
   }
   if (!ctx.agenticAllowed) {
     return fail("agentic_account", "This account is not agent-tradable. New buys stay off.");
@@ -113,14 +101,15 @@ export function validateNewBuy(ctx: GuardContext): Verdict {
   if (!/^[A-Z]{1,5}$/.test(symbol)) {
     return fail("symbol", "Symbol must be 1 to 5 letters.");
   }
-  if (ctx.profitTargetPct < 0.1 || ctx.profitTargetPct > 3 || ctx.stopLossPct < 0.1 || ctx.stopLossPct > 5 || ctx.maxOrderPct < 1 || ctx.maxOrderPct > 25 || ctx.dailyLossPct < 0.1 || ctx.dailyLossPct > 5) {
-    return fail("settings", "Profit target, stop, or a cap is outside its allowed range.");
+  if (ctx.profitTargetPct < 0.1 || ctx.profitTargetPct > 3 || ctx.stopLossPct < 0.1 || ctx.stopLossPct > 5 || ctx.dailyLossPct < 0.1 || ctx.dailyLossPct > 5 || ctx.orderCap < 1 || ctx.orderCap > 1000) {
+    return fail("settings", "Profit target, stop, daily loss stop, or the order cap is outside its allowed range.");
   }
   const quote = ctx.quote;
   if (!quote || quote.symbol.toUpperCase() !== symbol || !quote.tradable || !(quote.ask > 0)) {
     return fail("quote", "No usable quote for this symbol.");
   }
   const held = ctx.held.find((position) => position.symbol.toUpperCase() === symbol && position.quantity > 0);
+  const intent = ctx.intent ?? (held ? "add" : "starter");
   if (!held && !ctx.top10.map((item) => item.toUpperCase()).includes(symbol)) {
     return fail("top10", "New buys have to be in the Top 10. Buys that add to a name you already hold, and all sells, are not limited by the list.");
   }
@@ -149,20 +138,24 @@ export function validateNewBuy(ctx: GuardContext): Verdict {
   if (loss >= lossCap && lossCap > 0) {
     return fail("daily_loss", "Daily loss stop is hit. New buys are paused. Protective sells still run.");
   }
-  const today = etParts(ctx.now).date;
-  if (dayTradeCount(ctx.dayTrades, today) >= ctx.pdtLimit) {
-    return fail("pdt", "Day-trade cap is reached for this 5-business-day window. New buys are paused. Stop-loss sells still run.");
+  if (ctx.ordersToday >= ctx.orderCap) {
+    return fail("order_cap", "The daily order cap is reached. New buys wait until tomorrow. Protective sells still run.");
   }
-  const sized = sizeEntry({
-    equity: ctx.equity,
-    ask: quote.ask,
-    profitTargetPct: ctx.profitTargetPct,
-    stopLossPct: ctx.stopLossPct,
-    maxOrderPct: ctx.maxOrderPct,
-    buyingPower: ctx.buyingPower,
-  });
+  if (ctx.audience === "live" && ctx.hasProvenBuyRule === false) {
+    return fail("proven", "Live new buys stay idle until a buy rule is marked Proven.");
+  }
+  const positionNotional = held?.notional ?? 0;
+  const room = remainingRoom({ balance: ctx.equity, positionNotional, buyingPower: ctx.buyingPower });
+  if (session === "overnight" && quote.ask > room && intent === "starter") {
+    return fail("cap", "This share price is above the 10% position cap, so it cannot be bought overnight (whole shares only).");
+  }
+  const sized = intent === "add"
+    ? sizeAdd({ balance: ctx.equity, positionNotional, price: quote.ask, buyingPower: ctx.buyingPower, strength: ctx.addStrength ?? 0, now: ctx.now })
+    : sizeStarter({ balance: ctx.equity, price: quote.ask, buyingPower: ctx.buyingPower, now: ctx.now });
   if ("error" in sized) {
-    return fail("cap", "One share costs more than the order cap or buying power.");
+    if (sized.error === "strength") return fail("cap", "Signals are not strong enough to add.");
+    if (session !== "regular") return fail("cap", "A whole share costs more than the starter, the remaining room under the 10% cap, or available buying power.");
+    return fail("cap", "This buy does not fit under the 10% position cap or available buying power. The app never borrows.");
   }
   const bundle = buildEntryBundle({
     accountNumber: "pending",
@@ -170,7 +163,7 @@ export function validateNewBuy(ctx: GuardContext): Verdict {
     ask: quote.ask,
     quantity: sized.quantity,
     stopLossPct: ctx.stopLossPct,
-    profitTargetDollars: roundMoney(sized.quantity * quote.ask * (ctx.stopLossPct / 100)),
+    profitTargetPct: ctx.profitTargetPct,
     refId: ctx.refId,
     session,
   });
@@ -183,10 +176,13 @@ export function validateNewBuy(ctx: GuardContext): Verdict {
   if (ctx.usedRefIds.includes(ctx.refId)) {
     return fail("duplicate", "This order was already submitted.", bundle);
   }
-  if (ctx.mode === "view_only") {
-    return fail("view_only", "View Only is on. The order was checked and not sent.", bundle);
+  const sizeReason = intent === "add" && "strength" in sized
+    ? `Add sized at ${Math.round(Number(sized.strength) * 100)}% of remaining room under the 10% cap.`
+    : "Starter buy of 20% of the max position (2% of account balance).";
+  if (ctx.audience === "live" && ctx.mode === "view_only") {
+    return { ok: false, code: "view_only", message: "View Only is on. The order was checked and not sent.", bundle, sizeReason };
   }
-  return { ok: true, code: "ok", message: "Checked. Ready for the simulator.", bundle };
+  return { ok: true, code: "ok", message: "Checked. Ready for the simulator.", bundle, sizeReason };
 }
 
 export interface ExitContext {
@@ -194,7 +190,7 @@ export interface ExitContext {
   killed: boolean;
   quantity: number;
   bid: number;
-  kind: "stop" | "target" | "manual";
+  kind: "stop" | "target" | "manual" | "weakness";
   sessionOverride?: SessionName;
 }
 
@@ -203,10 +199,7 @@ export function validateExit(ctx: ExitContext): { ok: boolean; code: string; mes
   if (session === "closed") return { ok: false, code: "session", message: "The market is closed. The exit waits for the next session." };
   if (!(ctx.quantity > 0) || !(ctx.bid > 0)) return { ok: false, code: "quote", message: "No position or quote to sell." };
   if (ctx.kind === "manual" && ctx.killed) {
-    return { ok: true, code: "kill_exit", message: "Kill switch is flattening this position in the simulator." };
+    return { ok: true, code: "sell_all", message: "Sell All Positions is flattening this position in the simulator." };
   }
-  if (session !== "regular" && ctx.kind !== "stop" && ctx.kind !== "target" && ctx.kind !== "manual") {
-    return { ok: false, code: "session", message: "Outside regular hours only limit exits are sent." };
-  }
-  return { ok: true, code: "ok", message: "Exit allowed. Stop-loss and target sells are not blocked by the Top 10, the day-trade cap, or the daily loss stop." };
+  return { ok: true, code: "ok", message: "Exit allowed. Stop-loss and target sells are not blocked by the Top 10, the order cap, or the daily loss stop. Sells have no dollar limit." };
 }

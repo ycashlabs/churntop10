@@ -22,7 +22,7 @@ export function readCookie(header: string | undefined, name: string): string | u
 
 export function allowHost(env: Env, hostname: string): boolean {
   if (env.ENVIRONMENT === "prod") return hostname === "top10.ycashlabs.com";
-  return hostname === "localhost" || hostname === "top10-dev.ycashlabs.com";
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "top10-dev.ycashlabs.com";
 }
 
 export function rpFromUrl(url: URL): { origin: string; rpID: string } {

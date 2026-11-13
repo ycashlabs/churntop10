@@ -32,18 +32,22 @@ export function buildEntryBundle(input: {
   ask: number;
   quantity: number;
   stopLossPct: number;
-  profitTargetDollars: number;
+  profitTargetPct?: number;
+  profitTargetDollars?: number;
   refId: string;
   session?: SessionName;
+  basis?: number;
 }): EntryBundle {
   const session = input.session ?? "regular";
   const hours = sessionMarketHours(session) ?? "regular_hours";
   const stopKind: "broker" | "synthetic" = session === "regular" ? "broker" : "synthetic";
   const quantity = input.quantity;
   const notional = roundMoney(quantity * input.ask);
-  const stopPrice = roundMoney(input.ask * (1 - input.stopLossPct / 100));
-  const targetMove = quantity > 0 ? input.profitTargetDollars / quantity : 0;
-  const targetPrice = roundMoney(input.ask + targetMove);
+  const basis = input.basis ?? input.ask;
+  const stopPrice = roundMoney(basis * (1 - input.stopLossPct / 100));
+  const targetPrice = input.profitTargetPct !== undefined
+    ? roundMoney(basis * (1 + input.profitTargetPct / 100))
+    : roundMoney(basis + (quantity > 0 && input.profitTargetDollars ? input.profitTargetDollars / quantity : 0));
   const qty = shareString(quantity);
   const entry: EquityOrderArgs = {
     account_number: input.accountNumber,

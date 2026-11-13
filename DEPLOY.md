@@ -1,9 +1,8 @@
 # Deploy
 
-This repository does not create Cloudflare resources and does not deploy. `npm run build` writes the two artifacts you upload:
+The product contract is [docs/spec-v2.md](docs/spec-v2.md).
 
-- `dist/index.js` — ES module Worker (`AccountTrader` is a named export, the default export is `fetch` + `scheduled`)
-- `dist/assets/` — static files for the assets binding
+This repository does not create Cloudflare resources and does not deploy. `npm run build` writes `dist/index.js`, an ES module Worker (`AccountTrader` is a named export, the default export is `fetch` + `scheduled`) with the built HTML, JS, and CSS embedded. The Worker serves that UI itself, so a deploy does not need a successful Workers assets-upload JWT. `dist/assets/` is still produced for local `wrangler dev` and as a fallback.
 
 Account `f59b2545f5783d93b378006f3eb10bb4`, zone `ycashlabs.com`.
 

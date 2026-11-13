@@ -5,6 +5,7 @@ import { marketableSellLimit, nextExitAction, quoteIsStale, spreadRatio, MAX_SPR
 import { buildEntryBundle } from "../src/lib/orders.js";
 import { validateOutgoing } from "../src/lib/requests.js";
 import { runSimulatorCycle, type SimState } from "../src/lib/simulator.js";
+import { DRAFT_RULES } from "../src/lib/rules.js";
 import { validateNewBuy, type GuardContext } from "../src/lib/validator.js";
 
 const REGULAR = new Date("2026-11-13T15:00:00-05:00");
@@ -40,15 +41,14 @@ function ctx(overrides: Partial<GuardContext> = {}): GuardContext {
     killed: false,
     top10: ["AAPL"],
     held: [],
-    equity: 10000,
-    buyingPower: 10000,
-    dayStartEquity: 10000,
+    equity: 20000,
+    buyingPower: 20000,
+    dayStartEquity: 20000,
     profitTargetPct: 1,
     stopLossPct: 1,
-    maxOrderPct: 10,
     dailyLossPct: 1,
-    dayTrades: [],
-    pdtLimit: 3,
+    orderCap: 100,
+    ordersToday: 0,
     quote: { symbol: "AAPL", bid: 354.75, ask: 355.07, last: 355, tradable: true, hasBidAsk: true, asOf: OVERNIGHT.toISOString() },
     quoteSource: "recorded",
     workingSymbols: [],
@@ -60,24 +60,47 @@ function ctx(overrides: Partial<GuardContext> = {}): GuardContext {
   };
 }
 
+function draftRules() {
+  const now = Date.now();
+  return DRAFT_RULES.map((seed, index) => ({
+    id: `rule-${index}`,
+    familyId: seed.familyId,
+    name: seed.name,
+    side: seed.side,
+    body: seed.body,
+    signals: seed.signals,
+    status: "experimenting" as const,
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  }));
+}
+
 function emptyState(): SimState {
+  const rules = draftRules();
   return {
-    cash: 10000,
-    dayStartEquity: 10000,
+    cash: 20000,
+    dayStartEquity: 20000,
     dayStartDate: "2026-11-15",
     mode: "live",
     killed: false,
     profitTargetPct: 1,
     stopLossPct: 1,
-    maxOrderPct: 10,
     dailyLossPct: 1,
-    pdtLimit: 3,
+    orderCap: 100,
     top10: ["AAPL"],
     positions: [],
     orders: [],
     dayTrades: [],
     proposals: [],
+    trades: [],
     usedRefIds: [],
+    rules,
+    selectedRuleIds: rules.map((rule) => rule.id),
+    bars: {},
+    spyBars: [],
+    spyLast: 600,
+    spyPreviousClose: 595,
   };
 }
 

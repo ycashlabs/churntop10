@@ -1,5 +1,5 @@
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
-import type { SessionView, Summary } from "../lib/api-types";
+import type { RuleHistoryView, RuleView, SessionView, SimulatorView, Summary } from "../lib/api-types";
 
 let csrf = "";
 
@@ -71,4 +71,20 @@ export interface PendingConnect {
 
 export function getPendingConnect(): Promise<PendingConnect> {
   return api<PendingConnect>("/api/robinhood/pending");
+}
+
+export function getSimulator(): Promise<SimulatorView> {
+  return api<SimulatorView>("/api/simulator");
+}
+
+export function getRules(): Promise<{ rules: RuleView[] }> {
+  return api<{ rules: RuleView[] }>("/api/rules");
+}
+
+export function getRuleHistory(familyId: string): Promise<{ history: RuleHistoryView[] }> {
+  return api<{ history: RuleHistoryView[] }>(`/api/rules/${familyId}/history`);
+}
+
+export function postJson<T>(path: string, body?: unknown): Promise<T> {
+  return api<T>(path, { method: "POST", body: body === undefined ? "{}" : JSON.stringify(body) });
 }

@@ -17,12 +17,7 @@ OAuth is the Trading MCP resource `https://agent.robinhood.com/mcp/trading`. Dis
 
 ## Pattern day trader
 
-Two sources disagree on purpose, and the dates explain it.
-
-- [FINRA Regulatory Notice 26-10](https://www.finra.org/rules-guidance/notices/26-10) (20 Apr 2026) adopts intraday margin standards that replace the day-trading margin rules, including the pattern-day-trader count and the $25,000 minimum. Effective 4 Jun 2026, with a phase-in through 20 Oct 2027. [Notice 26-11](https://www.finra.org/rules-guidance/notices/26-11) deletes the old PDT interpretations.
-- [Robinhood's pattern day trading article](https://robinhood.com/us/en/support/articles/pattern-day-trading/) still describes the old rule: 4 or more day trades in 5 trading days, more than 6% of trades in that window, margin accounts, $25,000 equity. That page had not been rewritten to the FINRA notice when this was checked.
-
-The app keeps a local cap of 3 round trips in the last 5 business days. It is this app's limit, not a claim that Robinhood will flag the account. A stop-loss or target sell is allowed even when the cap is used up. New buys are not. Exchange holidays are not on the calendar yet.
+The PDT 3-day-trade cap is **removed** from this app. [FINRA Regulatory Notice 26-10](https://www.finra.org/rules-guidance/notices/26-10) (20 Apr 2026) replaces the day-trading margin rules, including the pattern-day-trader count and the $25,000 minimum, effective 4 Jun 2026. Robinhood has removed PDT. The MCP account ••••4028 is limited margin, which allows trading unsettled funds; with under $2,000 there is no leverage.
 
 ## Sessions
 

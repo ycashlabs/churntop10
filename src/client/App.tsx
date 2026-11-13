@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import type { SessionView, Summary } from "../lib/api-types";
+import type { RuleHistoryView, RuleView, SessionView, SimulatorView, Summary } from "../lib/api-types";
 import { SESSION_HELP } from "../lib/clock";
 import { parseCallbackInput } from "../lib/oauth";
-import { getPendingConnect, getSession, getSummary, loadCsrf, post, registerPasskey, signIn } from "./api";
+import { getPendingConnect, getRuleHistory, getRules, getSession, getSimulator, getSummary, loadCsrf, post, postJson, registerPasskey, signIn } from "./api";
 
 type SettingsDraft = Summary["settings"];
 
@@ -59,7 +59,7 @@ export function App() {
   }
   if (!summary) return <main className="shell"><p>Loading the account…</p>{error && <p className="error">{error}</p>}</main>;
 
-  const page = path.startsWith("/top10") ? "top10" : path.startsWith("/settings") ? "settings" : "summary";
+  const page = path.startsWith("/top10") ? "top10" : path.startsWith("/rules") ? "rules" : path.startsWith("/simulator") ? "simulator" : path.startsWith("/settings") ? "settings" : "summary";
   return (
     <main className="shell">
       <header>
@@ -68,22 +68,26 @@ export function App() {
           <nav>
             <a href="/" className={page === "summary" ? "active" : ""} onClick={(event) => { event.preventDefault(); go("/"); }}>Account Summary</a>
             <a href="/top10" className={page === "top10" ? "active" : ""} onClick={(event) => { event.preventDefault(); go("/top10"); }}>Top 10</a>
+            <a href="/rules" className={page === "rules" ? "active" : ""} onClick={(event) => { event.preventDefault(); go("/rules"); }}>Rules</a>
+            <a href="/simulator" className={page === "simulator" ? "active" : ""} onClick={(event) => { event.preventDefault(); go("/simulator"); }}>Simulator</a>
             <a href="/settings" className={page === "settings" ? "active" : ""} onClick={(event) => { event.preventDefault(); go("/settings"); }}>Settings</a>
           </nav>
         </div>
         <div className="meta">
-          <div className={summary.mode === "live" ? "stamp" : "stamp"}>{summary.killed ? "Killed" : summary.mode === "live" ? "Live" : "View only"}</div>
+          <div className="stamp">{summary.killed ? "New buys stopped" : summary.mode === "live" ? "Live" : "View only"}</div>
           <div>{summary.clock}</div>
           <div>{summary.session}</div>
           <button className="quiet" type="button" onClick={() => run(async () => { await post("/api/auth/logout"); setSummary(null); })}>Sign out</button>
         </div>
       </header>
-      {summary.mode !== "live" && <p className="banner">View Only. Checks are saved and nothing is sent.</p>}
-      {summary.mode === "live" && !summary.liveGate && <p className="banner">Live is selected. The broker gate is off, so fills stay in the simulator.</p>}
-      {summary.killed && <p className="banner">Kill switch is on. New buys are stopped. Working entries in the simulator are cancelled. Real Robinhood orders are not cancelled from here.</p>}
+      {summary.mode !== "live" && <p className="banner">View Only. Live real-money trading stays off until you explicitly approve it. The Simulator has its own screen and fake money.</p>}
+      {summary.mode === "live" && !summary.liveGate && <p className="banner">Live is selected, but the broker gate is off. No real Robinhood orders are sent. Use the Simulator screen to run selected rules with fake money.</p>}
+      {summary.killed && <p className="banner">Sell All Positions is on. New buys are stopped. Real Robinhood orders are not cancelled or sold from here.</p>}
       {error && <p className="error">{error}</p>}
       {page === "summary" && <SummaryPage summary={summary} />}
       {page === "top10" && <TopPage summary={summary} onRun={run} />}
+      {page === "rules" && <RulesPage />}
+      {page === "simulator" && <SimulatorPage />}
       {page === "settings" && <SettingsPage summary={summary} onRun={run} />}
     </main>
   );
@@ -126,9 +130,9 @@ function SummaryPage({ summary }: { summary: Summary }) {
   return (
     <div className="grid">
       <section className="card">
-        <h2>Robinhood</h2>
+        <h2>Robinhood account</h2>
         {summary.robinhoodStatus === "error" && <p className="error">{summary.robinhoodError ?? "Robinhood could not be read."} Reconnect from <a href="/settings">Settings</a>.</p>}
-        {summary.robinhoodStatus === "not_connected" && <p>Not connected. Connect from <a href="/settings">Settings</a>. Until then, Top 10 quotes come from the recorded book from 13 Nov 2026.</p>}
+        {summary.robinhoodStatus === "not_connected" && <p>Not connected. Connect from <a href="/settings">Settings</a>. This screen shows only the real Robinhood account. Fake-money trading lives on the Simulator screen.</p>}
         {!summary.connected || !rh ? null : (
           <dl>
             <dt>Account</dt><dd>{rh.maskedAccount}</dd>
@@ -146,43 +150,13 @@ function SummaryPage({ summary }: { summary: Summary }) {
         )}
       </section>
       <section className="card">
-        <h2>Simulator {summary.simulator.maskedAccount}</h2>
-        <dl>
-          <dt>Equity</dt><dd>{summary.simulator.equity}</dd>
-          <dt>Cash</dt><dd>{summary.simulator.cash}</dd>
-          <dt>Daily loss</dt><dd>{summary.simulator.dailyLoss} / {summary.simulator.dailyLossCap}</dd>
-          <dt>Day trades</dt><dd>{summary.simulator.dayTrades} / {summary.simulator.pdtLimit}</dd>
-          <dt>Quotes</dt><dd>{summary.quoteSource === "robinhood" ? "Live" : "Recorded"}</dd>
-        </dl>
-        <table>
-          <thead><tr><th>Position</th><th>Qty</th><th>Last</th><th>P&L</th></tr></thead>
-          <tbody>
-            {summary.simulator.positions.length === 0 && <tr><td colSpan={4}>No simulated positions.</td></tr>}
-            {summary.simulator.positions.map((position) => (
-              <tr key={position.symbol}><td>{position.symbol}</td><td>{position.quantity}</td><td>{position.last}</td><td>{position.pnl}</td></tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-      <section className="card">
-        <h2>Orders</h2>
-        <table>
-          <thead><tr><th>Symbol</th><th>Side</th><th>Role</th><th>Status</th></tr></thead>
-          <tbody>
-            {summary.simulator.orders.length === 0 && <tr><td colSpan={4}>No orders yet.</td></tr>}
-            {summary.simulator.orders.map((order, index) => (
-              <tr key={`${order.symbol}-${order.role}-${index}`}><td>{order.symbol}</td><td>{order.side}</td><td>{order.role}</td><td>{order.status}</td></tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-      <section className="card">
-        <h2>Latest check</h2>
+        <h2>Session</h2>
         <p>{SESSION_HELP}</p>
-        <ul className="proposals">
-          {summary.proposals.length === 0 && <li>No check yet. Run one from Top 10.</li>}
-          {summary.proposals.map((proposal) => <li key={`${proposal.symbol}-${proposal.at}`}><strong>{proposal.symbol}</strong> {proposal.verdict}. {proposal.message}</li>)}
-        </ul>
+        <dl>
+          <dt>Clock</dt><dd>{summary.clock}</dd>
+          <dt>Session</dt><dd>{summary.session}</dd>
+          <dt>Quotes</dt><dd>{summary.quoteSource === "robinhood" ? "Live Robinhood" : "Recorded book (Robinhood not connected)"}</dd>
+        </dl>
       </section>
     </div>
   );
@@ -194,7 +168,7 @@ function TopPage({ summary, onRun }: { summary: Summary; onRun: (action: () => P
   return (
     <section className="card">
       <h2>Top 10</h2>
-      <p>New buys have to be on this list. Names you already hold can still be sold, and a buy that adds to one of them is not treated as a new name.</p>
+      <p>This list is editable anytime and limits new first buys only. Positions in a name you later remove are still managed and can still be sold. Adds to a held name follow the scaling-in rules.</p>
       <table>
         <thead><tr><th>Symbol</th><th>Bid</th><th>Ask</th><th>Last</th></tr></thead>
         <tbody>
@@ -206,7 +180,6 @@ function TopPage({ summary, onRun }: { summary: Summary; onRun: (action: () => P
       </label>
       <div className="row">
         <button type="button" onClick={() => onRun(() => post("/api/top10", { symbols: symbols.split(/\s+/).filter(Boolean) }))}>Save list</button>
-        <button className="quiet" type="button" onClick={() => onRun(() => post("/api/cycle"))}>Run check</button>
       </div>
     </section>
   );
@@ -254,18 +227,19 @@ function SettingsPage({ summary, onRun }: { summary: Summary; onRun: (action: ()
     <section className="card">
       <h2>Settings</h2>
       <p>{SESSION_HELP}</p>
-      <label>Profit target, percent of account balance (0.1–3)
+      <label>Profit target, percent above average cost (0.1–3)
         <input type="number" min={0.1} max={3} step={0.1} value={draft.profitTargetPct} onChange={(event) => setNumber("profitTargetPct", event.target.value)} />
       </label>
-      <label>Stop-loss, percent from entry (0.1–5)
+      <label>Stop-loss, percent below average cost (0.1–5)
         <input type="number" min={0.1} max={5} step={0.1} value={draft.stopLossPct} onChange={(event) => setNumber("stopLossPct", event.target.value)} />
-      </label>
-      <label>Order cap, percent of equity (1–25)
-        <input type="number" min={1} max={25} step={1} value={draft.maxOrderPct} onChange={(event) => setNumber("maxOrderPct", event.target.value)} />
       </label>
       <label>Daily loss stop, percent of the day's starting equity (0.1–5)
         <input type="number" min={0.1} max={5} step={0.1} value={draft.dailyLossPct} onChange={(event) => setNumber("dailyLossPct", event.target.value)} />
       </label>
+      <label>Order cap, orders per day (1–1000; may be set high, for example 100)
+        <input type="number" min={1} max={1000} step={1} value={draft.orderCap} onChange={(event) => setNumber("orderCap", event.target.value)} />
+      </label>
+      <p className="muted">There are no buy amount fields. Sizing is the 20% starter (2% of balance), signal-sized adds, and a 10% per-symbol cap. Sells have no dollar limit. The app never borrows.</p>
       <div className="row">
         <button type="button" onClick={() => onRun(() => post("/api/settings", draft))}>Save caps</button>
         {summary.mode === "view_only" ? (
@@ -273,8 +247,8 @@ function SettingsPage({ summary, onRun }: { summary: Summary; onRun: (action: ()
         ) : (
           <button className="quiet" type="button" onClick={() => onRun(() => post("/api/mode", { mode: "view_only" }))}>Switch to View Only</button>
         )}
-        <button className="danger" type="button" onClick={() => onRun(() => post("/api/kill"))}>Kill switch</button>
-        {summary.killed && <button className="quiet" type="button" onClick={() => onRun(() => post("/api/resume"))}>Clear kill switch</button>}
+        <SellAllButton onDone={() => onRun(async () => undefined)} />
+        {summary.killed && <button className="quiet" type="button" onClick={() => onRun(() => post("/api/resume"))}>Allow new buys again</button>}
 
       </div>
 
@@ -341,8 +315,217 @@ function SettingsPage({ summary, onRun }: { summary: Summary; onRun: (action: ()
           })}>Disconnect Robinhood</button>
         </div>
       )}
-      <p>Saving caps, editing the Top 10, switching to Live, and connecting or disconnecting Robinhood each ask for the passkey again. The kill switch does not.</p>
+      <p>Saving caps, editing the Top 10 or a rule, marking a rule Proven, and switching to Live or connecting Robinhood each ask for the passkey again. Sell All Positions asks for a confirm step, not a passkey. It sells simulated positions only and does not place or cancel real Robinhood orders.</p>
     </section>
+  );
+}
+
+function score(card: RuleView["scorecard"]): string {
+  if (card.tradeCount === 0) return "No trades yet.";
+  const win = card.winRate === null ? "—" : `${Math.round(card.winRate * 100)}%`;
+  const avg = card.avgProfit === null ? "—" : `$${card.avgProfit.toFixed(2)}`;
+  const worst = card.worstLoss === null ? "—" : `$${card.worstLoss.toFixed(2)}`;
+  return `Win rate ${win}. Avg profit ${avg}. Worst loss ${worst}. ${card.tradeCount} trades.`;
+}
+
+function RulesPage() {
+  const [rules, setRules] = useState<RuleView[] | null>(null);
+  const [error, setError] = useState("");
+  const [history, setHistory] = useState<RuleHistoryView[]>([]);
+  const [historyFor, setHistoryFor] = useState("");
+  const [draftName, setDraftName] = useState("");
+  const [draftSide, setDraftSide] = useState<"buy" | "sell">("buy");
+  const [draftBody, setDraftBody] = useState("");
+  const [editing, setEditing] = useState<string>("");
+  async function refresh() {
+    const body = await getRules();
+    setRules(body.rules);
+  }
+  useEffect(() => { refresh().catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not load rules.")); }, []);
+  async function run(action: () => Promise<{ rules: RuleView[] }>) {
+    setError("");
+    try { setRules((await action()).rules); }
+    catch (err) { setError(err instanceof Error ? err.message : "Request failed."); }
+  }
+  async function showHistory(familyId: string) {
+    setHistoryFor(familyId);
+    const body = await getRuleHistory(familyId);
+    setHistory(body.history);
+  }
+  if (!rules) return <section className="card"><p>Loading rules…</p>{error && <p className="error">{error}</p>}</section>;
+  const current = editing ? rules.find((rule) => rule.id === editing) : undefined;
+  return (
+    <div className="stack">
+      {error && <p className="error">{error}</p>}
+      <section className="card">
+        <h2>Rules contract</h2>
+        <p>You edit the text; the app proofreads by saving a history entry for every change, status change, and approval. Only you can mark a rule Proven. Live trading uses only Proven rules. The Simulator can run any selected rules, including Experimenting ones. Editing a Proven rule creates a new Experimenting version; open trades keep the versions they started with.</p>
+        {rules.map((rule) => (
+          <article className="rule" key={rule.id}>
+            <header>
+              <h3>{rule.name} <span className="muted">v{rule.version}</span></h3>
+              <div className={`stamp ${rule.status}`}>{rule.status}</div>
+            </header>
+            <p className="muted">{rule.side === "buy" ? "Buy rule" : "Sell rule"} · {rule.signals.length ? rule.signals.join(", ") : "Uses Settings percentages"}</p>
+            <p>{rule.body}</p>
+            <p className="muted">{score(rule.scorecard)}</p>
+            <div className="row">
+              <button className="quiet" type="button" onClick={() => { setEditing(rule.id); setDraftName(rule.name); setDraftSide(rule.side); setDraftBody(rule.body); }}>Edit / rename</button>
+              {rule.status !== "proven" && <button type="button" onClick={() => run(() => postJson("/api/rules/" + rule.id + "/status", { status: "proven" }))}>Mark Proven</button>}
+              {rule.status === "proven" && <button className="quiet" type="button" onClick={() => run(() => postJson("/api/rules/" + rule.id + "/status", { status: "experimenting" }))}>Move to Experimenting</button>}
+              {rule.status !== "retired" && <button className="quiet" type="button" onClick={() => run(() => postJson("/api/rules/" + rule.id + "/status", { status: "retired" }))}>Retire</button>}
+              <button className="quiet" type="button" onClick={() => showHistory(rule.familyId)}>History</button>
+            </div>
+          </article>
+        ))}
+      </section>
+      <section className="card">
+        <h2>{current ? "Edit rule" : "Create a rule"}</h2>
+        <label>Name<input value={draftName} onChange={(event) => setDraftName(event.target.value)} /></label>
+        {!current && (
+          <label>Side
+            <select value={draftSide} onChange={(event) => setDraftSide(event.target.value as "buy" | "sell")}>
+              <option value="buy">Buy</option>
+              <option value="sell">Sell</option>
+            </select>
+          </label>
+        )}
+        <label>Plain-English text<textarea rows={4} value={draftBody} onChange={(event) => setDraftBody(event.target.value)} /></label>
+        <div className="row">
+          {current ? (
+            <button type="button" onClick={() => run(async () => {
+              const body = await postJson<{ rules: RuleView[] }>("/api/rules/" + current.id, { name: draftName, body: draftBody, signals: current.signals });
+              setEditing(""); setDraftName(""); setDraftBody("");
+              return body;
+            })}>Save changes</button>
+          ) : (
+            <button type="button" onClick={() => run(async () => {
+              const body = await postJson<{ rules: RuleView[] }>("/api/rules", { name: draftName, side: draftSide, body: draftBody, signals: [] });
+              setDraftName(""); setDraftBody("");
+              return body;
+            })}>Create rule</button>
+          )}
+          {current && <button className="quiet" type="button" onClick={() => { setEditing(""); setDraftName(""); setDraftBody(""); }}>Cancel</button>}
+        </div>
+      </section>
+      {historyFor && (
+        <section className="card">
+          <h2>History</h2>
+          {history.length === 0 && <p>No history yet.</p>}
+          <ul className="proposals">
+            {history.map((row) => (
+              <li key={row.id}><strong>{new Date(row.at).toLocaleString()}</strong> {row.action}{row.fromStatus ? ` ${row.fromStatus} → ${row.toStatus ?? ""}` : ""} · v{row.version}</li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function SimulatorPage() {
+  const [sim, setSim] = useState<SimulatorView | null>(null);
+  const [rules, setRules] = useState<RuleView[]>([]);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [error, setError] = useState("");
+  async function load() {
+    const [next, ruleBody] = await Promise.all([getSimulator(), getRules()]);
+    setSim(next);
+    setRules(ruleBody.rules);
+    setSelected(next.selectedRuleIds.length ? next.selectedRuleIds : ruleBody.rules.map((rule) => rule.id));
+  }
+  useEffect(() => { load().catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not load the simulator.")); }, []);
+  async function runCycle() {
+    setError("");
+    try {
+      const next = await postJson<SimulatorView>("/api/simulator/cycle", { ruleIds: selected });
+      setSim(next);
+      setSelected(next.selectedRuleIds.length ? next.selectedRuleIds : selected);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not run the simulator.");
+    }
+  }
+  function toggle(id: string) {
+    setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  }
+  if (!sim) return <section className="card"><p>Loading the simulator…</p>{error && <p className="error">{error}</p>}</section>;
+  return (
+    <div className="stack">
+      {error && <p className="error">{error}</p>}
+      <section className="card">
+        <h2>Simulator</h2>
+        <p>Fake money only. This screen is separate from Account Summary. Run the rules you select. Off-hours stops are still watched on each cycle, normally every 5 minutes when a position is open.</p>
+        <dl>
+          <dt>Equity</dt><dd>{sim.equity}</dd>
+          <dt>Cash</dt><dd>{sim.cash}</dd>
+          <dt>Daily loss</dt><dd>{sim.dailyLoss} / {sim.dailyLossCap}</dd>
+          <dt>Orders today</dt><dd>{sim.ordersToday} / {sim.orderCap}</dd>
+          <dt>Quotes</dt><dd>{sim.quoteSource === "robinhood" ? "Live" : "Recorded"}</dd>
+        </dl>
+        <h3>Rules to run</h3>
+        {rules.map((rule) => (
+          <label key={rule.id} className="check">
+            <input type="checkbox" checked={selected.includes(rule.id)} onChange={() => toggle(rule.id)} />
+            {rule.name} <span className="muted">({rule.status})</span>
+          </label>
+        ))}
+        <div className="row">
+          <button type="button" onClick={() => runCycle()}>Run check</button>
+        </div>
+      </section>
+      <section className="card">
+        <h2>Positions</h2>
+        <table>
+          <thead><tr><th>Symbol</th><th>Qty</th><th>Avg cost</th><th>Last</th><th>P&L</th><th>Rules</th></tr></thead>
+          <tbody>
+            {sim.positions.length === 0 && <tr><td colSpan={6}>No simulated positions.</td></tr>}
+            {sim.positions.map((position) => (
+              <tr key={position.symbol}><td>{position.symbol}</td><td>{position.quantity}</td><td>{position.avgCost}</td><td>{position.last}</td><td>{position.pnl}</td><td>{[position.buyRule, position.sellRule].filter(Boolean).join(" · ")}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+      <section className="card">
+        <h2>Orders</h2>
+        <table>
+          <thead><tr><th>Symbol</th><th>Side</th><th>Role</th><th>Status</th><th>Price</th></tr></thead>
+          <tbody>
+            {sim.orders.length === 0 && <tr><td colSpan={5}>No orders yet.</td></tr>}
+            {sim.orders.map((order, index) => (
+              <tr key={`${order.symbol}-${order.role}-${index}`}><td>{order.symbol}</td><td>{order.side}</td><td>{order.role}</td><td>{order.status}</td><td>{order.price}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+      <section className="card">
+        <h2>Latest check</h2>
+        <ul className="proposals">
+          {sim.events.map((event, index) => <li key={`e-${index}`}><strong>{event.action}</strong> {event.detail}</li>)}
+          {sim.proposals.map((proposal) => <li key={`${proposal.symbol}-${proposal.at}`}><strong>{proposal.symbol}</strong> {proposal.verdict}. {proposal.message}</li>)}
+          {sim.events.length === 0 && sim.proposals.length === 0 && <li>No check yet. Select rules and run one.</li>}
+        </ul>
+      </section>
+    </div>
+  );
+}
+
+function SellAllButton({ onDone }: { onDone: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  const [note, setNote] = useState("");
+  if (!confirming) {
+    return <button className="danger" type="button" onClick={() => setConfirming(true)}>Sell All Positions</button>;
+  }
+  return (
+    <div className="confirm">
+      <p>This sells every simulated position, stops new buys, and does not send or cancel real Robinhood orders. Confirm?</p>
+      {note && <p className="error">{note}</p>}
+      <div className="row">
+        <button className="danger" type="button" onClick={() => {
+          postJson("/api/sell-all", { confirm: true }).then(() => { setConfirming(false); onDone(); }).catch((err: unknown) => setNote(err instanceof Error ? err.message : "Could not sell."));
+        }}>Confirm sell all</button>
+        <button className="quiet" type="button" onClick={() => setConfirming(false)}>Cancel</button>
+      </div>
+    </div>
   );
 }
 

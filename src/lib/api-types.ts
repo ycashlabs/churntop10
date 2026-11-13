@@ -22,20 +22,8 @@ export interface Summary {
     todayPnl: string;
     unsettled: string;
   };
-  simulator: {
-    maskedAccount: string;
-    cash: string;
-    equity: string;
-    dailyLoss: string;
-    dailyLossCap: string;
-    dayTrades: number;
-    pdtLimit: number;
-    positions: Array<{ symbol: string; quantity: string; avgCost: string; last: string; marketValue: string; pnl: string }>;
-    orders: Array<{ symbol: string; side: string; type: string; quantity: string; status: string; role: string; price: string }>;
-  };
-  settings: { profitTargetPct: number; stopLossPct: number; maxOrderPct: number; dailyLossPct: number };
+  settings: { profitTargetPct: number; stopLossPct: number; dailyLossPct: number; orderCap: number };
   top10: Array<{ symbol: string; bid: string; ask: string; last: string; tradable: boolean }>;
-  proposals: Array<{ symbol: string; verdict: string; message: string; at: number }>;
 }
 
 export interface SessionView {
@@ -44,4 +32,47 @@ export interface SessionView {
   email?: string;
   recovery?: boolean;
   stepUp?: boolean;
+}
+
+export interface RuleView {
+  id: string;
+  familyId: string;
+  name: string;
+  side: "buy" | "sell";
+  body: string;
+  signals: string[];
+  status: "experimenting" | "proven" | "retired";
+  version: number;
+  createdAt: number;
+  updatedAt: number;
+  scorecard: { tradeCount: number; winRate: number | null; avgProfit: number | null; worstLoss: number | null };
+}
+
+export interface RuleHistoryView {
+  id: string;
+  action: string;
+  fromStatus?: string;
+  toStatus?: string;
+  version: number;
+  detail: string;
+  at: number;
+}
+
+export interface SimulatorView {
+  cash: string;
+  equity: string;
+  dailyLoss: string;
+  dailyLossCap: string;
+  ordersToday: number;
+  orderCap: number;
+  killed: boolean;
+  session: string;
+  clock: string;
+  quoteSource: "recorded" | "robinhood";
+  selectedRuleIds: string[];
+  positions: Array<{ symbol: string; quantity: string; avgCost: string; last: string; marketValue: string; pnl: string; buyRule?: string; sellRule?: string }>;
+  orders: Array<{ symbol: string; side: string; type: string; quantity: string; status: string; role: string; price: string }>;
+  trades: Array<{ symbol: string; quantity: string; entry: string; exit: string; pnl: string; reason: string; at: number }>;
+  events: Array<{ action: string; detail: string; at?: number }>;
+  proposals: Array<{ symbol: string; verdict: string; message: string; at: number }>;
 }

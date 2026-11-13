@@ -15,7 +15,7 @@ Sources: the live Trading MCP input schemas (captured 13 Nov 2026), [Robinhood 2
 
 ## New buys
 
-New buys are allowed in regular, extended, and overnight sessions, still subject to PDT, the order cap, the daily loss stop, the profit target, and the stop-loss percent. They stay blocked when the session is closed, the kill switch is on, View Only is on (the plan is still recorded), or the other existing guards fail.
+New buys are allowed in regular, extended, and overnight sessions, still subject to the 10% position cap, the daily order cap, the daily loss stop, the profit target, and the stop-loss percent. The PDT day-trade cap is removed. They stay blocked when the session is closed, Sell All Positions is on, View Only is on for the live path (the plan is still recorded), or the other existing guards fail.
 
 Every entry is a limit order for whole shares, priced at the ask.
 
@@ -63,7 +63,7 @@ The stop is only checked when a cycle runs, normally every 5 minutes. A print th
 
 ## Live gate
 
-`submitGatedTool` still refuses every broker call while `ALLOW_LIVE_TRADING` is not `"1"`, and it still refuses `cancel_equity_order` and modify tools even if that var is later set to `"1"`. Kill switch does not cancel real Robinhood orders. When live trading is eventually armed, off-hours work will need an explicit follow-up: persist broker order ids, allow cancel of our own take-profit (and only that) to fire a synthetic stop, and review-then-place session-correct limits. This change does not do that.
+`submitGatedTool` still refuses every broker call while `ALLOW_LIVE_TRADING` is not `"1"`, and it still refuses `cancel_equity_order` and modify tools even if that var is later set to `"1"`. Sell All Positions does not cancel or sell real Robinhood orders. When live trading is eventually armed, off-hours work will need an explicit follow-up: persist broker order ids, allow cancel of our own take-profit (and only that) to fire a synthetic stop, and review-then-place session-correct limits. This change does not do that.
 
 ## What the UI says
 
