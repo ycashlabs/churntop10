@@ -63,7 +63,12 @@ async function mustNotInclude(label, ...needles) {
   }
 }
 
-await page.goto("http://127.0.0.1:8787/", { waitUntil: "networkidle0" });
+page.on("pageerror", (err) => console.log("pageerror", err.message));
+page.on("console", (msg) => {
+  if (msg.type() === "error" || msg.type() === "warning") console.log("console", msg.type(), msg.text());
+});
+await page.goto("http://localhost:8787/", { waitUntil: "networkidle0" });
+
 await page.waitForFunction(() => {
   const text = document.body.innerText;
   const labels = [...document.querySelectorAll("button")].map((item) => item.textContent?.trim());
@@ -76,7 +81,13 @@ if (!opened.includes("Account Summary")) {
   if (labels.includes("Create passkey")) await button("Create passkey");
   else if (labels.includes("Sign in")) await button("Sign in");
   else throw new Error("no auth button: " + opened.slice(0, 800));
-  await page.waitForFunction(() => document.body.innerText.includes("Account Summary"));
+  try {
+    await page.waitForFunction(() => document.body.innerText.includes("Account Summary"), { timeout: 20000 });
+  } catch (err) {
+    await shot("00-auth-failed");
+    const after = await text();
+    throw new Error("auth did not reach Account Summary: " + after.slice(0, 1000) + " / " + err);
+  }
 }
 await mustInclude("summary", "Account Summary", "Top 10", "Rules", "Simulator", "Settings");
 await mustNotInclude("summary", "SIM0000999", "544784028", "5UD70362", "Kill switch", "simulator cash", "Simulated cash");
@@ -93,15 +104,39 @@ await page.evaluate(() => {
   field.dispatchEvent(new Event("input", { bubbles: true }));
 });
 await button("Save list");
-await page.waitForFunction(() => !document.body.innerText.includes("Confirm with your passkey"));
+await page.waitForFunction(() => {
+  const rows = [...document.querySelectorAll("table tr")].map((row) => row.innerText);
+  const symbols = rows.filter((row) => /AAPL|MSFT|NVDA/.test(row));
+  const extras = rows.some((row) => /AMZN|GOOGL|META|TSLA|LLY/.test(row));
+  const failed = document.body.innerText.includes("Passkey confirmation failed") || document.body.innerText.includes("Request failed");
+  if (failed) throw new Error("top10 save failed: " + document.body.innerText.slice(0, 500));
+  return symbols.length >= 3 && !extras;
+});
 await mustInclude("top10", "AAPL", "MSFT", "NVDA");
 await shot("02-top10");
 
 await go("/rules");
-await page.waitForFunction(() => document.body.innerText.includes("First buy on strength") || document.body.innerText.includes("Create a rule"));
-await mustInclude("rules", "Experimenting");
-await button("Edit / rename");
-await page.waitForFunction(() => document.body.innerText.includes("Save changes"));
+await page.waitForFunction(() => document.body.innerText.includes("First buy on strength"));
+await mustInclude("rules", "Experimenting", "First buy on strength");
+await shot("03-rules");
+await page.evaluate(() => {
+  const article = [...document.querySelectorAll("article")].find((item) => item.innerText.includes("First buy on strength"));
+  if (!article) throw new Error("no First buy article");
+  const found = [...article.querySelectorAll("button")].find((item) => item.textContent?.trim() === "Edit / rename");
+  if (!found) throw new Error("no Edit on First buy");
+  found.click();
+});
+try {
+  await page.waitForFunction(() => document.body.innerText.includes("Save changes") && [...document.querySelectorAll("input")].some((item) => (item.value || "").includes("First buy")), { timeout: 10000 });
+} catch (err) {
+  const info = await page.evaluate(() => ({
+    text: document.body.innerText.slice(0, 1500),
+    inputs: [...document.querySelectorAll("input, textarea")].map((item) => ({ tag: item.tagName, value: item.value })),
+    headings: [...document.querySelectorAll("h2, h3")].map((item) => item.textContent),
+  }));
+  await shot("00-rules-edit-failed");
+  throw new Error("edit form did not fill: " + JSON.stringify(info) + " / " + err);
+}
 await page.evaluate(() => {
   const field = [...document.querySelectorAll("input")].find((item) => item.value && item.value.includes("First buy"));
   if (!field) throw new Error("no rule name field");
@@ -110,16 +145,31 @@ await page.evaluate(() => {
   field.dispatchEvent(new Event("input", { bubbles: true }));
 });
 await button("Save changes");
-await page.waitForFunction(() => document.body.innerText.includes("First buy on strength (renamed)"));
-const provenButtons = await page.$$eval("button", (buttons) => buttons.filter((item) => item.textContent?.trim() === "Mark Proven").length);
-if (provenButtons < 1) throw new Error("no Mark Proven button");
-await button("Mark Proven");
-await page.waitForFunction(() => document.body.innerText.includes("Proven") && !document.body.innerText.includes("Confirm with your passkey"));
+await page.waitForFunction(() => {
+  if (document.body.innerText.includes("Passkey confirmation failed")) throw new Error("rule save failed");
+  return document.body.innerText.includes("First buy on strength (renamed)") && document.body.innerText.includes("Create a rule");
+});
 await page.evaluate(() => {
-  const found = [...document.querySelectorAll("button")].find((item) => item.textContent?.trim() === "History");
+  const article = [...document.querySelectorAll("article")].find((item) => item.innerText.includes("First buy on strength (renamed)"));
+  if (!article) throw new Error("renamed rule missing");
+  const found = [...article.querySelectorAll("button")].find((item) => item.textContent?.trim() === "Mark Proven");
+  if (!found) throw new Error("no Mark Proven on renamed rule");
+  found.click();
+});
+await page.waitForFunction(() => {
+  if (document.body.innerText.includes("Passkey confirmation failed")) throw new Error("mark proven failed");
+  const article = [...document.querySelectorAll("article")].find((item) => item.innerText.includes("First buy on strength (renamed)"));
+  return !!article && article.innerText.toLowerCase().includes("proven");
+});
+await page.evaluate(() => {
+  const article = [...document.querySelectorAll("article")].find((item) => item.innerText.includes("First buy on strength (renamed)"));
+  const found = [...article.querySelectorAll("button")].find((item) => item.textContent?.trim() === "History");
   found?.click();
 });
-await page.waitForFunction(() => document.body.innerText.toLowerCase().includes("history") || document.body.innerText.includes("approved") || document.body.innerText.includes("renamed"));
+await page.waitForFunction(() => {
+  const history = [...document.querySelectorAll("section")].find((item) => item.querySelector("h2")?.textContent === "History");
+  return !!history && /approved|updated|created|status|edit/i.test(history.innerText) && !history.innerText.includes("No history yet");
+});
 await mustInclude("history", "First buy on strength (renamed)");
 await shot("03-rules-history");
 
@@ -146,7 +196,10 @@ await go("/simulator");
 await page.waitForFunction(() => document.body.innerText.includes("Run check"));
 await mustInclude("simulator", "Run check");
 await button("Run check");
-await page.waitForFunction(() => /order was checked|sim_entry|proposal|position|starter|AAPL|no usable|idle|checked and not sent|filled|working/i.test(document.body.innerText));
+await page.waitForFunction(() => {
+  const latest = [...document.querySelectorAll("section")].find((item) => item.querySelector("h2")?.textContent === "Latest check");
+  return !!latest && !latest.innerText.includes("No check yet");
+});
 await shot("04-simulator");
 
 await go("/settings");
@@ -164,7 +217,10 @@ await page.$$eval("input[type='number']", (inputs) => {
   }
 });
 await button("Save caps");
-await page.waitForFunction(() => !document.body.innerText.includes("Confirm with your passkey") && document.querySelector("input")?.value === "1.5");
+await page.waitForFunction(() => {
+  if (document.body.innerText.includes("Passkey confirmation failed")) throw new Error("save caps failed");
+  return document.querySelector("input")?.value === "1.5";
+});
 await button("Sell All Positions");
 await page.waitForFunction(() => document.body.innerText.includes("Confirm sell all"));
 await button("Confirm sell all");
