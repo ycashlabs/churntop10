@@ -1,0 +1,19 @@
+{
+  "data": {
+    "account_number": "2000004028",
+    "window": "day",
+    "display_currency": "USD",
+    "data_points": [
+      {
+        "start_time": "2026-11-12T05:00:00Z",
+        "end_time": "2026-11-12T23:59:19Z",
+        "realized_gain": null,
+        "rate_of_realized_gain": null,
+        "number_of_trades": 0
+      }
+    ],
+    "total_returns": "0",
+    "total_rate_of_return": "0"
+  },
+  "guide": "Realized profit and loss only. Null bucket gains are n/a, not zero. Zero totals with no closing trades are valid."
+}

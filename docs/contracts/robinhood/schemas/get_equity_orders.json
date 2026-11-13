@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "properties": {
+    "account_number": { "type": "string" },
+    "order_id": { "type": "string" },
+    "state": { "type": "string" },
+    "symbol": { "type": "string" },
+    "created_at_gte": { "type": "string" },
+    "placed_agent": { "type": "string" },
+    "agent_initiated": { "type": ["null", "boolean"] },
+    "cursor": { "type": "string" }
+  },
+  "required": ["account_number"],
+  "additionalProperties": false
+}

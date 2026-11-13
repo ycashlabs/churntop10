@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "properties": {
+    "symbols": {
+      "type": ["null", "array"],
+      "items": { "type": "string" }
+    }
+  },
+  "required": ["symbols"],
+  "additionalProperties": false
+}

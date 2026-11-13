@@ -1,0 +1,4 @@
+{
+  "data": { "orders": [] },
+  "guide": "Present symbol, side, type, state, quantity, price, average_price, and id. next is an opaque cursor."
+}

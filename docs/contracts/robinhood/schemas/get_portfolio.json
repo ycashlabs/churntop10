@@ -1,0 +1,8 @@
+{
+  "type": "object",
+  "properties": {
+    "account_number": { "type": "string", "description": "Brokerage account number. Obtain from get_accounts." }
+  },
+  "required": ["account_number"],
+  "additionalProperties": false
+}

@@ -1,0 +1,22 @@
+{
+  "data": {
+    "total_value": "10000.00",
+    "equity_value": "0",
+    "options_value": "0",
+    "futures_value": "0",
+    "event_contracts_value": "0",
+    "crypto_value": "0",
+    "cash": "10000.00",
+    "pending_deposits": "0",
+    "mutual_funds_value": "0",
+    "fixed_income_value": "0",
+    "currency": "USD",
+    "buying_power": {
+      "buying_power": "10000.0000",
+      "unleveraged_buying_power": "10000.0000",
+      "display_currency": "USD"
+    },
+    "crypto_buying_power": { "buying_power": "10000.0000" }
+  },
+  "guide": "Show total_value as account value. buying_power.buying_power is the spendable figure. crypto_buying_power is optional."
+}

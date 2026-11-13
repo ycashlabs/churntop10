@@ -1,0 +1,15 @@
+{
+  "data": {
+    "positions": [
+      {
+        "symbol": "AAPL",
+        "quantity": "2.000000",
+        "average_buy_price": "190.000000",
+        "shares_available_for_sells": "2.000000",
+        "intraday_quantity": "2.000000",
+        "type": "long"
+      }
+    ]
+  },
+  "guide": "synthetic open position in the live field shape"
+}
