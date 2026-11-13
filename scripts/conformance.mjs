@@ -48,6 +48,7 @@ const simulator = read("src/lib/simulator.ts");
 const migrate1 = read("migrations/0001_init.sql");
 const migrate4 = read("migrations/0004_live_sync.sql");
 const migrate5 = read("migrations/0005_trade_signals_threshold.sql");
+const migrate6 = read("migrations/0006_trade_signals_name_reason.sql");
 const dist = existsSync(join(root, "dist/index.js")) ? read("dist/index.js") : "";
 const wrangler = read("wrangler.jsonc");
 
@@ -72,6 +73,7 @@ const migrations = [
   "0003_v3.sql",
   "0004_live_sync.sql",
   "0005_trade_signals_threshold.sql",
+  "0006_trade_signals_name_reason.sql",
 ];
 
 function planned(reason) {
@@ -91,7 +93,7 @@ function fromSource(ok, reason) {
 }
 
 const catalog = [
-  { id: "S-01", area: "Schema", description: "Fresh DB is migrations 0001–0005 in order, portable types",
+  { id: "S-01", area: "Schema", description: "Fresh DB is migrations 0001–0006 in order, portable types",
     check() {
       const names = sh("ls migrations").split("\n").filter((n) => n.endsWith(".sql")).sort();
       if (JSON.stringify(names) !== JSON.stringify(migrations)) return fail(`files ${names.join(", ")}`);
@@ -125,11 +127,18 @@ const catalog = [
         "seed defaults or legacy columns missing",
       );
     } },
-  { id: "S-06", area: "Schema", description: "trade_signals persists trade_id, signal_id, value, threshold, fired",
+  { id: "S-06", area: "Schema", description: "trade_signals persists trade_id, signal_id, value, threshold, fired, name, and reason",
     check() {
       return fromSource(
-        d1.includes("INSERT INTO trade_signals") && d1.includes("threshold") && d1.includes("fired"),
-        "d1 insertTrade does not persist threshold/fired",
+        d1.includes("INSERT INTO trade_signals") && d1.includes("threshold") && d1.includes("fired") && d1.includes("signal.name") && d1.includes("signal.reason"),
+        "d1 insertTrade does not persist threshold/fired/name/reason",
+      );
+    } },
+  { id: "S-07", area: "Schema", description: "trade_signals has name and reason (0006) on this branch / dev",
+    check() {
+      return fromSource(
+        migrate6.includes("ALTER TABLE trade_signals ADD COLUMN name TEXT") && migrate6.includes("ALTER TABLE trade_signals ADD COLUMN reason TEXT"),
+        "0006 missing name/reason ALTER",
       );
     } },
   { id: "ST-01", area: "Settings", description: "Defaults: profit/stop/daily loss 1%, order cap 100, capital 10000, view_only, not killed",
@@ -272,6 +281,11 @@ const catalog = [
       const need = ["Edit capital", "Edit target / stop", ">Side<", ">Qty<", ">Price<", ">Status<", ">Reason<"];
       return fromSource(!includesAll(app, need), includesAll(app, need));
     } },
+  { id: "U-14", area: "UI", description: "Trades table lists stored signals with the DESIGN §6 formatTradeSignalLine wording",
+    check() {
+      const need = ["formatTradeSignalLine", "trade.signals.map"];
+      return fromSource(!includesAll(app, need), includesAll(app, need) || "App.tsx does not render formatTradeSignalLine for trade.signals");
+    } },
   { id: "U-13", area: "UI", description: "No HTML title= tooltips on controls",
     check() {
       // React component props named title= (PositionsPanel title) are headings, not HTML tooltips.
@@ -379,11 +393,25 @@ const catalog = [
         "shouldTickSimulator does not always tick",
       );
     } },
-  { id: "H-05", area: "Holdings / live / simulator", description: "Every buy/add/exit writes trade_signals (id, value, threshold, fired) when signals were computed",
+  { id: "H-05", area: "Holdings / live / simulator", description: "Every buy/add/exit writes trade_signals (id, name, value, threshold, fired, reason) when signals were computed; positionViews forwards them",
     check() {
       const sim = simulator.includes("signals: input.signals") || simulator.includes("signals:");
       const live = trader.includes("computeLiveSignals") && trader.includes("recordLivePlacement");
-      return fromSource(sim && live, `sim attach=${sim} live=${live}`);
+      const views = trader.includes("signals: (trade.signals ?? [])") || trader.includes("signals: (trade.signals");
+      const names = d1.includes("signal.name") && d1.includes("signal.reason") && d1.includes("signalResultFromRow");
+      const tradeSignals = read("src/lib/trade-signals.ts");
+      const mapper = tradeSignals.includes("export function signalResultFromRow") && tradeSignals.includes("getSignal");
+      return fromSource(sim && live && views && names && mapper, `sim attach=${sim} live=${live} views=${views} names=${names} mapper=${mapper}`);
+    } },
+  { id: "H-07", area: "Holdings / live / simulator", description: "Live proposeLiveEntries requires first-buy signals to fire before placing, matching the simulator",
+    check() {
+      const start = trader.indexOf("private async proposeLiveEntries");
+      const end = trader.indexOf("private async buildSummary");
+      const fn = start >= 0 && end > start ? trader.slice(start, end) : "";
+      const guard = fn.includes("allRequiredSignalsFired") && fn.includes("First-buy signals did not confirm.");
+      const beforePlace = guard && fn.indexOf("allRequiredSignalsFired") < fn.indexOf("place_equity_order");
+      const sim = simulator.includes("allRequiredSignalsFired");
+      return fromSource(beforePlace && sim, `live guard=${guard} beforePlace=${beforePlace} sim=${sim}`);
     } },
   { id: "H-06", area: "Holdings / live / simulator", description: "Prod NVDA 7:55 fill has trade_signals rows",
     check() {

@@ -154,8 +154,22 @@ try {
     for (const trade of pos.trades || []) trades.push(trade);
   }
   const withSignals = trades.filter((t) => Array.isArray(t.signals) && t.signals.length);
-  // positionViews currently omits signals from the API payload; persistence is checked from D1.
-  record("H-05", "PASS", `simulator API returned ${trades.length} position trade(s); signals array on payload=${withSignals.length} (listTrades fields are not forwarded in positionViews; D1 checked separately)`);
+  const sample = withSignals[0]?.signals?.[0];
+  const shaped = sample && typeof sample.name === "string" && "fired" in sample && "value" in sample && "threshold" in sample && "reason" in sample;
+  if (trades.length === 0) {
+    record("H-05", "PASS", "simulator API returned 0 position trades this walk; persistence and positionViews forwarding are covered by unit tests");
+  } else if (!withSignals.length || !shaped) {
+    record("H-05", "FAIL", `simulator API returned ${trades.length} position trade(s); signals array on payload=${withSignals.length}; shape ok=${!!shaped}`);
+  } else {
+    record("H-05", "PASS", `simulator API returned ${trades.length} position trade(s); ${withSignals.length} carried signals (id, name, value, threshold, fired, reason)`);
+  }
+  const bodyAfterSim = await text();
+  const wording = bodyAfterSim.includes(": Fired.") || bodyAfterSim.includes(": Not fired.");
+  if (withSignals.length && !wording) {
+    record("U-14", "FAIL", "trades were returned with signals but the DESIGN Fired/Not fired wording was not visible on Simulator");
+  } else if (withSignals.length && wording) {
+    record("U-14", "PASS", "Simulator trades table shows DESIGN signal wording (Fired / Not fired)");
+  }
 
 
   await go("/review");

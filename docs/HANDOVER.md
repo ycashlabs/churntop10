@@ -6,7 +6,7 @@ Nothing in this note is a secret value. Never paste `TOKEN_KEY`, OAuth tokens, o
 
 Read [DESIGN.md](DESIGN.md) in full first, then this file. Safety rules are in [../AGENTS.md](../AGENTS.md).
 
-Last updated: 13 November 2026, 8:32 AM CST, America/Chicago.
+Last updated: 13 November 2026, 8:36 AM CST, America/Chicago.
 
 ## Owner and approval
 
@@ -87,10 +87,12 @@ Redirect is loopback `http://127.0.0.1:47621/callback` only. Do this on **prod**
 - D1 `churntop10-dev` now has `0001`–**`0005_trade_signals_threshold.sql`** (recorded 8:12:02 AM CST / 14:12:02 UTC). Pre-`0005` Time Travel bookmark: `000000a8-00000000-00005122-26fed85f6a2eb2ec034474f8838928a3`. PRAGMA shows `trade_signals.threshold`.
 - No Robinhood token. Holdings sync uses the recorded TSLL fixture (prod must never use that fixture).
 - Conformance: [TEST-RESULTS.md](TEST-RESULTS.md). Local wrangler sim starter persisted three `trade_signals` rows with thresholds. Prod NVDA backfill is still pending go-ahead.
+- Branch `cursor/signal-views-and-live-guards` (dev only): migration **`0006_trade_signals_name_reason.sql`** (`name`, `reason` on `trade_signals`), live first-buy signals must fire before place, and the trades table shows stored signals with the DESIGN §6 wording. Apply `0006` and deploy that Worker on **dev only**. Do not apply `0006` or that Worker on prod without a later explicit go-ahead.
 
 ### Open work / pending owner decisions
 
 - **Prod backfill of NVDA `trade_signals` rows** (trades `3989afa2-7976-4b28-b703-4c5e0352a9a6` and `5aa49ca9-f1c4-4622-aef6-8e1f8f4a0359`): dry-run completed, nothing inserted. Needs a second, explicit OK before `apply=true`. Migration `0005` and the trade_signals Worker are already on prod (see Current state).
+- **Prod migration `0006_trade_signals_name_reason.sql`** and the signal-views / live-guard Worker: built for dev only. Do not apply or upload to prod without explicit go-ahead.
 - **GitHub `workflow` scope**: required to add the dedicated `design` CI job in `.github/workflows/ci.yml`. Until then, `npm test` runs the check (see [ci-design-job.pending.yml](ci-design-job.pending.yml)).
 - Planned, not built: AI-created rules; rule points 0–100; weekly Saturday 9:00 AM CST review (owner routine, not a Worker cron); churncapital.com; live 24/5 engine; assign-sell-rule UI; Postgres / failover.
 

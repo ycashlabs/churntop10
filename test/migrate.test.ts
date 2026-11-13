@@ -32,13 +32,14 @@ function sqliteMini(db: DatabaseSync): MiniDb {
 }
 
 describe("migrations", () => {
-  it("applies a fresh 0001–0005 database and backfills the signal catalog", async () => {
+  it("applies a fresh 0001–0006 database and backfills the signal catalog", async () => {
     const db = new DatabaseSync(":memory:");
     applyFile(db, "0001_init.sql");
     applyFile(db, "0002_v2.sql");
     applyFile(db, "0003_v3.sql");
     applyFile(db, "0004_live_sync.sql");
     applyFile(db, "0005_trade_signals_threshold.sql");
+    applyFile(db, "0006_trade_signals_name_reason.sql");
     const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as Array<{ name: string }>;
     const names = tables.map((row) => row.name);
     expect(names).toEqual(expect.arrayContaining([
@@ -58,7 +59,7 @@ describe("migrations", () => {
     const tradeCols = db.prepare("PRAGMA table_info(trades)").all() as Array<{ name: string }>;
     expect(tradeCols.map((col) => col.name)).toContain("source");
     const signalCols = db.prepare("PRAGMA table_info(trade_signals)").all() as Array<{ name: string }>;
-    expect(signalCols.map((col) => col.name)).toContain("threshold");
+    expect(signalCols.map((col) => col.name)).toEqual(expect.arrayContaining(["threshold", "name", "reason"]));
   });
 
   it("upgrades a v2 database, moving rules, open positions, and closed trades", async () => {

@@ -11,7 +11,7 @@ import { submitGatedTool } from "../lib/broker.js";
 import { assertOutgoing } from "../lib/requests.js";
 import { applyOrderFill, labelBuyRule, recordsForPlacedLiveBuy, reconcileLiveHoldings, shouldComputeScores, type BrokerHolding } from "../lib/holdings.js";
 import { equityOf, ordersToday, runSimulatorCycle, sellAllSimPositions, type SimEvent, type SimState } from "../lib/simulator.js";
-import { computeSignals, type SignalResult } from "../lib/signals.js";
+import { allRequiredSignalsFired, computeSignals, type SignalResult } from "../lib/signals.js";
 import { dailyLossAmount, validExitPct, validateNewBuy, type GuardContext } from "../lib/validator.js";
 import type { RuleSide, RuleStatus } from "../lib/rules.js";
 import type { SimulatorView, RuleView, RuleHistoryView, PositionView, ReviewScreen } from "../lib/api-types.js";
@@ -220,8 +220,17 @@ export class AccountTrader extends DurableObject<Env> {
 
   private async ensureTradeSignalsSchema(): Promise<void> {
     const cols = (await this.env.DB.prepare("PRAGMA table_info(trade_signals)").all<{ name: string }>()).results.map((row) => row.name);
-    if (cols.length > 0 && !cols.includes("threshold")) {
-      await this.env.DB.prepare("ALTER TABLE trade_signals ADD COLUMN threshold REAL").run();
+    if (cols.length === 0) return;
+    const add: Array<[string, string]> = [
+      ["threshold", "ALTER TABLE trade_signals ADD COLUMN threshold REAL"],
+      ["name", "ALTER TABLE trade_signals ADD COLUMN name TEXT"],
+      ["reason", "ALTER TABLE trade_signals ADD COLUMN reason TEXT"],
+    ];
+    for (const [name, sql] of add) {
+      if (!cols.includes(name)) {
+        await this.env.DB.prepare(sql).run();
+        cols.push(name);
+      }
     }
   }
 
@@ -572,6 +581,8 @@ export class AccountTrader extends DurableObject<Env> {
     const top10 = (await this.env.DB.prepare("SELECT symbol FROM top10 ORDER BY rank").all<{ symbol: string }>()).results.map((row) => row.symbol);
     const rules = await (await this.store()).currentRules();
     const hasProvenBuyRule = rules.some((rule) => rule.side === "buy" && rule.status === "proven");
+    const provenBuy = rules.find((rule) => rule.side === "buy" && rule.status === "proven" && rule.familyId === "buy-first-strength")
+      ?? rules.find((rule) => rule.side === "buy" && rule.status === "proven");
     const refs = (await this.env.DB.prepare("SELECT ref_id FROM proposals").all<{ ref_id: string }>()).results.map((row) => row.ref_id);
     // Live orders must not use simulator positions or cash.
     for (const symbol of top10) {
@@ -603,6 +614,11 @@ export class AccountTrader extends DurableObject<Env> {
       };
       const verdict = validateNewBuy(guard);
       if (!verdict.ok || !verdict.bundle || verdict.bundle.stopKind !== "broker") continue;
+      const liveSignals = await this.computeLiveSignals(symbol, quote, now, provenBuy?.signals, quotes);
+      if (!allRequiredSignalsFired(liveSignals)) {
+        await this.audit("live_skipped", { reason: "signals", message: "First-buy signals did not confirm.", symbol, signals: liveSignals });
+        continue;
+      }
       const token = await this.accessToken();
       const accountNumber = token ? await this.agenticAccountNumber(token) : undefined;
       if (!token || !accountNumber) {
@@ -617,8 +633,6 @@ export class AccountTrader extends DurableObject<Env> {
       try {
         await submitGatedTool({ allowLive: this.env.ALLOW_LIVE_TRADING, tool: "review_equity_order", args: review, send: (tool, args) => this.mcpCall(token, tool, args) });
         const placed = await submitGatedTool({ allowLive: this.env.ALLOW_LIVE_TRADING, tool: "place_equity_order", args: bundle.entry, send: (tool, args) => this.mcpCall(token, tool, args) });
-        const provenBuy = rules.find((rule) => rule.side === "buy" && rule.status === "proven");
-        const liveSignals = await this.computeLiveSignals(symbol, quote, now, provenBuy?.signals, quotes);
         await this.recordLivePlacement({
           payload: placed,
           fallbackId: typeof bundle.entry.ref_id === "string" ? bundle.entry.ref_id : refId,
@@ -877,6 +891,14 @@ export class AccountTrader extends DurableObject<Env> {
           sizeReason: trade.sizeReason,
           exitReason: trade.exitReason,
           at: trade.createdAt,
+          signals: (trade.signals ?? []).map((signal) => ({
+            id: signal.id,
+            name: signal.name,
+            value: signal.value,
+            threshold: signal.threshold ?? null,
+            fired: signal.fired,
+            reason: signal.reason,
+          })),
         })),
       });
     }

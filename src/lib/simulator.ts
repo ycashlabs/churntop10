@@ -6,7 +6,7 @@ import type { QuoteView } from "./decode.js";
 import type { Bar } from "./bars.js";
 import { synthesizeBars } from "./bars.js";
 import type { RuleRecord } from "./rules.js";
-import { computeSignals, signalStrength, type SignalContext, type SignalResult } from "./signals.js";
+import { allRequiredSignalsFired, computeSignals, signalStrength, type SignalContext, type SignalResult } from "./signals.js";
 import { effectiveTradingCapital, openExposure } from "./capital.js";
 
 export interface SimPosition {
@@ -237,7 +237,7 @@ export function proposeSimEntries(
       continue;
     }
     const computed = rule.signals.length ? computeSignals(rule.signals, signalCtx(state, symbol, quote, now)) : [];
-    const allFired = computed.length === 0 || computed.every((item) => item.fired);
+    const allFired = allRequiredSignalsFired(computed);
     const strength = intent === "add" ? signalStrength(computed) : 1;
     if (!allFired || (intent === "add" && strength <= 0)) {
       recordProposal(state, ids, symbol, now, "signals", intent === "add" ? "Add signals did not confirm." : "First-buy signals did not confirm.", computed);
@@ -322,7 +322,7 @@ function pickAddRule(rules: RuleRecord[], state: SimState, quote: QuoteView | un
   if (!quote) return undefined;
   for (const rule of rules) {
     const computed = computeSignals(rule.signals, signalCtx(state, quote.symbol, quote, now));
-    if (computed.length === 0 || computed.every((item) => item.fired)) return rule;
+    if (allRequiredSignalsFired(computed)) return rule;
   }
   return rules[0];
 }
@@ -458,7 +458,7 @@ function tryWeaknessExit(state: SimState, position: SimPosition, quote: QuoteVie
   const rule = selected(state, "sell").find((item) => item.familyId === "sell-exit-weakness");
   if (!rule) return false;
   const computed = computeSignals(rule.signals, signalCtx(state, position.symbol, quote, now));
-  if (!computed.every((item) => item.fired)) return false;
+  if (!allRequiredSignalsFired(computed)) return false;
   const price = quote.hasBidAsk ? marketableSellLimit(quote.bid, quote.last) : quote.last;
   closeSimPosition(state, position, price, "weakness", now, ids, computed, `Exit on weakness: ${computed.map((item) => item.reason).join(" ")}`);
   events.push({ action: "weakness_exit_filled", detail: { symbol: position.symbol, price, signals: computed, rule: rule.name, ruleVersion: rule.version } });

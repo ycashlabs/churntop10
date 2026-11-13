@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { PositionView, ReviewScreen, RuleHistoryView, RuleView, SessionView, SimulatorView, Summary } from "../lib/api-types";
+import { formatTradeSignalLine } from "../lib/trade-signals";
 import { SESSION_HELP } from "../lib/clock";
 import { parseCallbackInput } from "../lib/oauth";
 import { getPendingConnect, getReviews, getRuleHistory, getRules, getSession, getSimulator, getSummary, loadCsrf, post, postJson, registerPasskey, signIn } from "./api";
@@ -625,7 +626,22 @@ function PositionsPanel({ title, positions, empty, onChanged }: { title: string;
             <tbody>
               {position.trades.length === 0 && <tr><td colSpan={5}>No trades recorded yet.</td></tr>}
               {position.trades.map((trade) => (
-                <tr key={trade.id}><td>{trade.side}</td><td>{trade.quantity}</td><td>{trade.price}</td><td>{trade.status}</td><td>{trade.sizeReason}{trade.exitReason ? ` ${trade.exitReason}` : ""}</td></tr>
+                <tr key={trade.id}>
+                  <td>{trade.side}</td>
+                  <td>{trade.quantity}</td>
+                  <td>{trade.price}</td>
+                  <td>{trade.status}</td>
+                  <td>
+                    {trade.sizeReason}{trade.exitReason ? ` ${trade.exitReason}` : ""}
+                    {trade.signals && trade.signals.length > 0 && (
+                      <ul className="muted">
+                        {trade.signals.map((signal) => (
+                          <li key={signal.id}>{formatTradeSignalLine(signal)}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </td>
+                </tr>
               ))}
             </tbody>
           </table>

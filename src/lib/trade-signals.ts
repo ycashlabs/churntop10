@@ -1,4 +1,4 @@
-import type { SignalResult } from "./signals.js";
+import { getSignal, type SignalResult } from "./signals.js";
 
 /** Decision cutoffs in the same units as SignalResult.value. */
 export const SIGNAL_THRESHOLDS: Record<string, number> = {
@@ -19,12 +19,46 @@ export function defaultThreshold(signalId: string): number | null {
   return value === undefined ? null : value;
 }
 
+/** Exact trades-table line from DESIGN §6: name, Fired/Not fired, optional value/threshold, reason. */
+export function formatTradeSignalLine(signal: Pick<SignalResult, "name" | "fired" | "value" | "threshold" | "reason">): string {
+  const flag = signal.fired ? "Fired" : "Not fired";
+  const parts = [`${signal.name}: ${flag}.`];
+  if (signal.value != null && Number.isFinite(signal.value)) {
+    if (signal.threshold != null && Number.isFinite(signal.threshold)) {
+      parts.push(`Value ${signal.value}, threshold ${signal.threshold}.`);
+    } else {
+      parts.push(`Value ${signal.value}.`);
+    }
+  }
+  const reason = signal.reason?.trim();
+  if (reason) parts.push(reason);
+  return parts.join(" ");
+}
+
+
+/** Rebuild a SignalResult from a trade_signals row. Missing name falls back to the catalog. */
+export function signalResultFromRow(item: Record<string, unknown>): SignalResult {
+  const id = String(item.signal_id ?? item.id ?? "");
+  const storedName = typeof item.name === "string" && item.name ? item.name : undefined;
+  const fired = item.fired === true || item.passed === 1 || item.passed === true;
+  return {
+    id,
+    name: storedName ?? getSignal(id)?.name ?? id,
+    fired,
+    value: item.value == null ? null : Number(item.value),
+    threshold: item.threshold == null ? null : Number(item.threshold),
+    reason: typeof item.reason === "string" ? item.reason : "",
+  };
+}
+
 export interface TradeSignalRow {
   tradeId: string;
   signalId: string;
   value: number | null;
   threshold: number | null;
   fired: boolean;
+  name?: string;
+  reason?: string;
 }
 
 export interface BackfillTrade {
@@ -87,6 +121,8 @@ export function rowsFromSignalResults(tradeId: string, signals: SignalResult[]):
     value: signal.value,
     threshold: signal.threshold ?? defaultThreshold(signal.id),
     fired: signal.fired,
+    name: signal.name,
+    reason: signal.reason,
   }));
 }
 
