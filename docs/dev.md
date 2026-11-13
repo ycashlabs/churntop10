@@ -15,3 +15,10 @@ Robinhood's shared public client accepts only loopback redirects, and dynamic re
 1. Settings → Connect Robinhood (passkey), then Open Robinhood sign-in and approve.
 2. The browser lands on `http://127.0.0.1:47621/callback?code=…&state=…&iss=…`, which does not load. That is expected.
 3. Paste that whole address into Settings and select Finish connecting. The Worker checks `state` (single use, 10 minutes) and `iss`, then exchanges the code with the saved PKCE verifier.
+
+
+## Current dev (live holdings sync, 13 November 2026)
+
+Dev Worker `churntop10-dev` at https://top10-dev.ycashlabs.com. UI is embedded in the Worker script (no `assets` binding). `ALLOW_LIVE_TRADING` is `0`. `ACCESS_ENFORCE` is `1`. `TOKEN_KEY` is kept across uploads with `keep_bindings: ["secret_text"]`. Cron is `*/5 * * * *`.
+
+D1 `churntop10-dev` (`7f0a12d3-f689-4a86-b30d-b349bdd77736`) now has `d1_migrations` rows for `0001_init.sql` through `0004_live_sync.sql`. `0004` adds portable `source` columns on `positions` and `trades`. Dev has no Robinhood token, so holdings sync uses the recorded `get_equity_positions_tsll.json` fixture. Prod must never use that fixture (`ENVIRONMENT=prod` returns no holdings when disconnected).
