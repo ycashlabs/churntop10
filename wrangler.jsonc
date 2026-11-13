@@ -75,7 +75,7 @@
     "prod": {
       "name": "churntop10-prod",
       "workers_dev": false,
-      "routes": [{ "pattern": "top10.ycashlabs.com", "zone_name": "ycashlabs.com" }],
+      "routes": [{ "pattern": "top10.ycashlabs.com", "custom_domain": true }],
       "triggers": { "crons": ["*/5 * * * *"] },
       "durable_objects": {
         "bindings": [{ "name": "TRADER", "class_name": "AccountTrader" }]
@@ -84,7 +84,7 @@
         {
           "binding": "DB",
           "database_name": "churntop10-prod",
-          "database_id": "00000000-0000-0000-0000-000000000002",
+          "database_id": "b2e4f00d-c7a2-41a6-a75f-12a3043ca20e",
           "migrations_dir": "migrations"
         }
       ],
@@ -93,8 +93,8 @@
         "ENVIRONMENT": "prod",
         "ALLOW_LIVE_TRADING": "0",
         "ACCESS_ENFORCE": "1",
-        "ACCESS_TEAM_DOMAIN": "",
-        "ACCESS_AUD": "",
+        "ACCESS_TEAM_DOMAIN": "dawn-rice-07a4",
+        "ACCESS_AUD": "b05d3bc57044f2fd02b7e9666d7e61a18e236784bdcbda9ea8322b9d6fe14517",
         "OWNER_EMAIL": "tom2258@gmail.com",
         "ZONE": "ycashlabs.com",
         "HOSTNAME": "top10.ycashlabs.com"

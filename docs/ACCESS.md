@@ -6,7 +6,7 @@ The deployed app is one owner: `tom2258@gmail.com`. Access is the front door. Th
 
 Dev is already in front of Access. The application is `Churn Top 10 dev` on team `dawn-rice-07a4`, hostname `top10-dev.ycashlabs.com`, audience `3826fb9770402e73a472a3e3519bcdbd4cdcbf79cc695141d3ffb9cdd8a2cdaa`. The policy allows `tom2258@gmail.com` only. See `docs/dev.md`.
 
-Prod (`top10.ycashlabs.com`) is not created. When it is, give it its own Access application and its own audience. Do not reuse the dev audience.
+Prod is in front of its own application: `Churn Top 10 prod` on team `dawn-rice-07a4`, hostname `top10.ycashlabs.com`, audience `b05d3bc57044f2fd02b7e9666d7e61a18e236784bdcbda9ea8322b9d6fe14517`, same owner-only policy and 1h session as dev. Never reuse one environment's audience in the other.
 
 Session duration can be short. The app has its own passkey session on top.
 

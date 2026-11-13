@@ -14,7 +14,7 @@ Account `f59b2545f5783d93b378006f3eb10bb4`, zone `ycashlabs.com`.
 | D1 name | `churntop10-dev` | `churntop10-prod` |
 | R2 bucket | `churntop10-audit-dev` | `churntop10-audit-prod` |
 
-Dev D1 `churntop10-dev` is `7f0a12d3-f689-4a86-b30d-b349bdd77736`, in the top-level block and in `env.dev`. Prod `database_id` `00000000-0000-0000-0000-000000000002` is still a stand-in. Prod is not created. Local `wrangler dev` keeps using a local sqlite file. It does not talk to the remote database unless you pass `--remote`.
+Dev D1 `churntop10-dev` is `7f0a12d3-f689-4a86-b30d-b349bdd77736`, in the top-level block and in `env.dev`. Prod D1 `churntop10-prod` is `b2e4f00d-c7a2-41a6-a75f-12a3043ca20e`, in `env.prod`. Prod is deployed; see `docs/prod.md`. Local `wrangler dev` keeps using a local sqlite file. It does not talk to the remote database unless you pass `--remote`.
 
 ## Create the resources
 
@@ -61,7 +61,7 @@ The other option is to make `migrations/0001_init.sql` idempotent first: change 
 
 Dev is served by a Workers Custom Domain: `top10-dev.ycashlabs.com` points at Worker `churntop10-dev`. There is no zone route for that hostname. `env.dev` records it as `{ "pattern": "top10-dev.ycashlabs.com", "custom_domain": true }`. Do not also add a zone route for it.
 
-Prod is not deployed. When it is, `top10.ycashlabs.com` can be a zone route or a custom domain. The prod block still shows a zone route and the stand-in database id. Look up the zone id for `ycashlabs.com` only if you choose a zone route:
+Prod is served the same way: `top10.ycashlabs.com` is a Workers Custom Domain on Worker `churntop10-prod`. `env.prod` records it as `{ "pattern": "top10.ycashlabs.com", "custom_domain": true }`. Do not add a zone route for it. A zone route would only be needed for a different design:
 
 ```bash
 curl -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/workers/routes" \
@@ -160,7 +160,7 @@ The module part is `index.js` from `dist/index.js` with type `application/javasc
 
 `ALLOW_LIVE_TRADING` stays `"0"`. The app starts in View Only. Turning the gate on is a later, separate decision and still does not send `cancel_equity_order`.
 
-Dev is already deployed with `ACCESS_ENFORCE` `1`, team `dawn-rice-07a4`, and the audience above. `ALLOW_LIVE_TRADING` stays `"0"`. What is live is listed in `docs/dev.md`. Prod still needs its own Access application before `ACCESS_ENFORCE` can be `1` there. See `docs/ACCESS.md`.
+Dev is already deployed with `ACCESS_ENFORCE` `1`, team `dawn-rice-07a4`, and the audience above. `ALLOW_LIVE_TRADING` stays `"0"`. What is live is listed in `docs/dev.md`. Prod has its own Access application and audience, and `ACCESS_ENFORCE` is `1` there too. See `docs/ACCESS.md` and `docs/prod.md`.
 
 ## Local
 
