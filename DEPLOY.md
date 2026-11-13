@@ -14,7 +14,7 @@ Account `f59b2545f5783d93b378006f3eb10bb4`, zone `ycashlabs.com`.
 | D1 name | `churntop10-dev` | `churntop10-prod` |
 | R2 bucket | `churntop10-audit-dev` | `churntop10-audit-prod` |
 
-`wrangler.jsonc` already has those names. The `database_id` values `00000000-0000-0000-0000-000000000001` (dev) and `00000000-0000-0000-0000-000000000002` (prod) are stand-ins. Replace each one with the `uuid` returned when you create that database, in both the top-level block and the matching `env` block, before any remote command. Local `wrangler dev` does not use the remote id.
+Dev D1 `churntop10-dev` is `7f0a12d3-f689-4a86-b30d-b349bdd77736`, in the top-level block and in `env.dev`. Prod `database_id` `00000000-0000-0000-0000-000000000002` is still a stand-in. Prod is not created. Local `wrangler dev` keeps using a local sqlite file. It does not talk to the remote database unless you pass `--remote`.
 
 ## Create the resources
 
@@ -42,15 +42,32 @@ curl -X POST "https://api.cloudflare.com/client/v4/accounts/f59b2545f5783d93b378
   -d @<(python3 -c 'import json; print(json.dumps({"sql": open("migrations/0001_init.sql").read()}))')
 ```
 
-Look up the zone id for `ycashlabs.com`, then attach the route after the Worker exists:
+That query API does not write Wrangler's `d1_migrations` table. Dev was applied that way. Reconcile it before the first `npx wrangler d1 migrations apply DB --remote --env dev`, or Wrangler will run `0001_init.sql` again and fail because the tables already exist.
+
+Wrangler 4.20 records a migration by filename. Create its bookkeeping table if it is missing, then insert the row it would have written:
+
+```sql
+CREATE TABLE IF NOT EXISTS d1_migrations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT UNIQUE,
+  applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+INSERT INTO d1_migrations (name) VALUES ('0001_init.sql');
+```
+
+Send that through the same D1 query API, against database `7f0a12d3-f689-4a86-b30d-b349bdd77736`. After the row exists, `wrangler d1 migrations apply DB --remote --env dev` reports that nothing is pending.
+
+The other option is to make `migrations/0001_init.sql` idempotent first: change each `CREATE TABLE` to `CREATE TABLE IF NOT EXISTS`. A later remote apply then succeeds on the existing tables and inserts the `0001_init.sql` row itself. Do that before the apply. Do not do both a hand-inserted row and an edit that you also expect Wrangler to execute. One path is enough.
+
+Dev is served by a Workers Custom Domain: `top10-dev.ycashlabs.com` points at Worker `churntop10-dev`. There is no zone route for that hostname. `env.dev` records it as `{ "pattern": "top10-dev.ycashlabs.com", "custom_domain": true }`. Do not also add a zone route for it.
+
+Prod is not deployed. When it is, `top10.ycashlabs.com` can be a zone route or a custom domain. The prod block still shows a zone route and the stand-in database id. Look up the zone id for `ycashlabs.com` only if you choose a zone route:
 
 ```bash
 curl -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/workers/routes" \
   -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "content-type: application/json" \
-  -d '{"pattern":"top10-dev.ycashlabs.com/*","script":"churntop10-dev"}'
+  -d '{"pattern":"top10.ycashlabs.com/*","script":"churntop10-prod"}'
 ```
-
-Prod pattern is `top10.ycashlabs.com/*` and script `churntop10-prod`.
 
 ## Bindings
 
@@ -59,14 +76,14 @@ The Worker reads these names. Dev values are shown. Prod swaps the names in the 
 | Binding | API `type` | Name | Value |
 | --- | --- | --- | --- |
 | Static assets | `assets` | `ASSETS` | completion JWT from the asset upload, plus config below |
-| D1 | `d1` | `DB` | `id` = the database uuid you just created |
+| D1 | `d1` | `DB` | dev `id` = `7f0a12d3-f689-4a86-b30d-b349bdd77736` |
 | R2 audit log | `r2_bucket` | `AUDIT` | `bucket_name` = `churntop10-audit-dev` |
 | Durable Object | `durable_object_namespace` | `TRADER` | `class_name` = `AccountTrader` |
 | Var | `plain_text` | `ENVIRONMENT` | `dev` |
 | Var | `plain_text` | `ALLOW_LIVE_TRADING` | `0` |
 | Var | `plain_text` | `ACCESS_ENFORCE` | `1` on a deployed Worker, `0` only for local `wrangler dev` |
-| Var | `plain_text` | `ACCESS_TEAM_DOMAIN` | your Access team subdomain, without `.cloudflareaccess.com` |
-| Var | `plain_text` | `ACCESS_AUD` | the Access application audience tag |
+| Var | `plain_text` | `ACCESS_TEAM_DOMAIN` | dev `dawn-rice-07a4` (no `.cloudflareaccess.com` suffix) |
+| Var | `plain_text` | `ACCESS_AUD` | dev `3826fb9770402e73a472a3e3519bcdbd4cdcbf79cc695141d3ffb9cdd8a2cdaa` |
 | Var | `plain_text` | `OWNER_EMAIL` | `tom2258@gmail.com` |
 | Var | `plain_text` | `ZONE` | `ycashlabs.com` |
 | Var | `plain_text` | `HOSTNAME` | `top10-dev.ycashlabs.com` |
@@ -122,14 +139,14 @@ Observability in this Wrangler version is logs at sampling rate 1 (`observabilit
   },
   "bindings": [
     { "type": "assets", "name": "ASSETS" },
-    { "type": "d1", "name": "DB", "id": "<churntop10-dev uuid>" },
+    { "type": "d1", "name": "DB", "id": "7f0a12d3-f689-4a86-b30d-b349bdd77736" },
     { "type": "r2_bucket", "name": "AUDIT", "bucket_name": "churntop10-audit-dev" },
     { "type": "durable_object_namespace", "name": "TRADER", "class_name": "AccountTrader" },
     { "type": "plain_text", "name": "ENVIRONMENT", "text": "dev" },
     { "type": "plain_text", "name": "ALLOW_LIVE_TRADING", "text": "0" },
     { "type": "plain_text", "name": "ACCESS_ENFORCE", "text": "1" },
-    { "type": "plain_text", "name": "ACCESS_TEAM_DOMAIN", "text": "<team>" },
-    { "type": "plain_text", "name": "ACCESS_AUD", "text": "<aud>" },
+    { "type": "plain_text", "name": "ACCESS_TEAM_DOMAIN", "text": "dawn-rice-07a4" },
+    { "type": "plain_text", "name": "ACCESS_AUD", "text": "3826fb9770402e73a472a3e3519bcdbd4cdcbf79cc695141d3ffb9cdd8a2cdaa" },
     { "type": "plain_text", "name": "OWNER_EMAIL", "text": "tom2258@gmail.com" },
     { "type": "plain_text", "name": "ZONE", "text": "ycashlabs.com" },
     { "type": "plain_text", "name": "HOSTNAME", "text": "top10-dev.ycashlabs.com" }
@@ -143,7 +160,7 @@ The module part is `index.js` from `dist/index.js` with type `application/javasc
 
 `ALLOW_LIVE_TRADING` stays `"0"`. The app starts in View Only. Turning the gate on is a later, separate decision and still does not send `cancel_equity_order`.
 
-Deployed dev and prod both set `ACCESS_ENFORCE` to `1`. Fill in the Access team and audience first, or every request returns 503. See `docs/ACCESS.md`.
+Dev is already deployed with `ACCESS_ENFORCE` `1`, team `dawn-rice-07a4`, and the audience above. `ALLOW_LIVE_TRADING` stays `"0"`. What is live is listed in `docs/dev.md`. Prod still needs its own Access application before `ACCESS_ENFORCE` can be `1` there. See `docs/ACCESS.md`.
 
 ## Local
 
@@ -153,4 +170,4 @@ cp .dev.vars.example .dev.vars
 npm run dev
 ```
 
-`npm run dev` builds the client, applies `migrations/0001_init.sql` to the local D1 database, and starts `wrangler dev` on port 8787 using the top-level config. That config keeps `ACCESS_ENFORCE` at `0` so a passkey works on `http://localhost:8787` without Access in front. It still uses the simulator and the recorded quote book.
+`npm run dev` builds the client, applies `migrations/0001_init.sql` to the local D1 database, and starts `wrangler dev` on port 8787 using the top-level config. That config keeps `ACCESS_ENFORCE` at `0` and leaves the Access team and audience empty, so a passkey works on `http://localhost:8787`. The top-level `database_id` matches dev so the name is real. The local command still uses local sqlite. It still uses the simulator and the recorded quote book. `env.dev` is the deployed Worker, not this local process.

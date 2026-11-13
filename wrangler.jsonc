@@ -28,7 +28,7 @@
     {
       "binding": "DB",
       "database_name": "churntop10-dev",
-      "database_id": "00000000-0000-0000-0000-000000000001",
+      "database_id": "7f0a12d3-f689-4a86-b30d-b349bdd77736",
       "migrations_dir": "migrations"
     }
   ],
@@ -47,7 +47,7 @@
     "dev": {
       "name": "churntop10-dev",
       "workers_dev": false,
-      "routes": [{ "pattern": "top10-dev.ycashlabs.com", "zone_name": "ycashlabs.com" }],
+      "routes": [{ "pattern": "top10-dev.ycashlabs.com", "custom_domain": true }],
       "triggers": { "crons": ["*/5 * * * *"] },
       "durable_objects": {
         "bindings": [{ "name": "TRADER", "class_name": "AccountTrader" }]
@@ -56,7 +56,7 @@
         {
           "binding": "DB",
           "database_name": "churntop10-dev",
-          "database_id": "00000000-0000-0000-0000-000000000001",
+          "database_id": "7f0a12d3-f689-4a86-b30d-b349bdd77736",
           "migrations_dir": "migrations"
         }
       ],
@@ -65,8 +65,8 @@
         "ENVIRONMENT": "dev",
         "ALLOW_LIVE_TRADING": "0",
         "ACCESS_ENFORCE": "1",
-        "ACCESS_TEAM_DOMAIN": "",
-        "ACCESS_AUD": "",
+        "ACCESS_TEAM_DOMAIN": "dawn-rice-07a4",
+        "ACCESS_AUD": "3826fb9770402e73a472a3e3519bcdbd4cdcbf79cc695141d3ffb9cdd8a2cdaa",
         "OWNER_EMAIL": "tom2258@gmail.com",
         "ZONE": "ycashlabs.com",
         "HOSTNAME": "top10-dev.ycashlabs.com"

@@ -4,14 +4,13 @@ The deployed app is one owner: `tom2258@gmail.com`. Access is the front door. Th
 
 ## Application
 
-Create a self-hosted Access application for each hostname:
+Dev is already in front of Access. The application is `Churn Top 10 dev` on team `dawn-rice-07a4`, hostname `top10-dev.ycashlabs.com`, audience `3826fb9770402e73a472a3e3519bcdbd4cdcbf79cc695141d3ffb9cdd8a2cdaa`. The policy allows `tom2258@gmail.com` only. See `docs/dev.md`.
 
-- `top10-dev.ycashlabs.com`
-- `top10.ycashlabs.com`
+Prod (`top10.ycashlabs.com`) is not created. When it is, give it its own Access application and its own audience. Do not reuse the dev audience.
 
 Session duration can be short. The app has its own passkey session on top.
 
-Policy: Include, Emails, `tom2258@gmail.com`. No bypass, no service token, no everyone.
+Policy shape: Include, Emails, `tom2258@gmail.com`. No bypass, no service token, no everyone.
 
 Identity is whatever you already use to prove that mailbox. An email one-time pin is enough if you do not want a second IdP.
 
