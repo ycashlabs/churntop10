@@ -255,6 +255,7 @@ export interface QuoteView {
   last: number;
   asOf: string;
   tradable: boolean;
+  hasBidAsk: boolean;
   previousClose: Field<number>;
 }
 
@@ -287,8 +288,9 @@ export function parseQuotes(payload: unknown): QuoteView[] {
     if (!chosen) continue;
     const bidRaw = parseAmountField(quote.bid_price, false);
     const askRaw = parseAmountField(quote.ask_price, false);
-    const bid = bidRaw.status === "ok" && bidRaw.value && bidRaw.value > 0 ? bidRaw.value : chosen.price;
-    const ask = askRaw.status === "ok" && askRaw.value && askRaw.value > 0 ? askRaw.value : chosen.price;
+    const hasBidAsk = bidRaw.status === "ok" && !!bidRaw.value && bidRaw.value > 0 && askRaw.status === "ok" && !!askRaw.value && askRaw.value > 0;
+    const bid = hasBidAsk && bidRaw.value ? bidRaw.value : chosen.price;
+    const ask = hasBidAsk && askRaw.value ? askRaw.value : chosen.price;
     const close = isRecord(item.close) ? parseAmountField(item.close.price, false) : notReported<number>();
     quotes.push({
       symbol: quote.symbol.toUpperCase(),
@@ -297,6 +299,7 @@ export function parseQuotes(payload: unknown): QuoteView[] {
       last: chosen.price,
       asOf: chosen.time,
       tradable: quote.has_traded !== false && (quote.state === undefined || quote.state === "active"),
+      hasBidAsk,
       previousClose: close.status === "ok" ? close : notReported(),
     });
   }

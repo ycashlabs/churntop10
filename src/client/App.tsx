@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { SessionView, Summary } from "../lib/api-types";
+import { SESSION_HELP } from "../lib/clock";
 import { parseCallbackInput } from "../lib/oauth";
 import { getPendingConnect, getSession, getSummary, loadCsrf, post, registerPasskey, signIn } from "./api";
 
@@ -177,6 +178,7 @@ function SummaryPage({ summary }: { summary: Summary }) {
       </section>
       <section className="card">
         <h2>Latest check</h2>
+        <p>{SESSION_HELP}</p>
         <ul className="proposals">
           {summary.proposals.length === 0 && <li>No check yet. Run one from Top 10.</li>}
           {summary.proposals.map((proposal) => <li key={`${proposal.symbol}-${proposal.at}`}><strong>{proposal.symbol}</strong> {proposal.verdict}. {proposal.message}</li>)}
@@ -251,6 +253,7 @@ function SettingsPage({ summary, onRun }: { summary: Summary; onRun: (action: ()
   return (
     <section className="card">
       <h2>Settings</h2>
+      <p>{SESSION_HELP}</p>
       <label>Profit target, percent of account balance (0.1–3)
         <input type="number" min={0.1} max={3} step={0.1} value={draft.profitTargetPct} onChange={(event) => setNumber("profitTargetPct", event.target.value)} />
       </label>

@@ -1,3 +1,4 @@
+import { sessionMarketHours, type SessionName } from "./clock.js";
 import { shareString, moneyString, roundMoney } from "./money.js";
 
 export interface EquityOrderArgs {
@@ -22,6 +23,7 @@ export interface EntryBundle {
   notional: number;
   stopPrice: number;
   targetPrice: number;
+  stopKind: "broker" | "synthetic";
 }
 
 export function buildEntryBundle(input: {
@@ -32,7 +34,11 @@ export function buildEntryBundle(input: {
   stopLossPct: number;
   profitTargetDollars: number;
   refId: string;
+  session?: SessionName;
 }): EntryBundle {
+  const session = input.session ?? "regular";
+  const hours = sessionMarketHours(session) ?? "regular_hours";
+  const stopKind: "broker" | "synthetic" = session === "regular" ? "broker" : "synthetic";
   const quantity = input.quantity;
   const notional = roundMoney(quantity * input.ask);
   const stopPrice = roundMoney(input.ask * (1 - input.stopLossPct / 100));
@@ -47,9 +53,10 @@ export function buildEntryBundle(input: {
     quantity: qty,
     limit_price: moneyString(input.ask),
     time_in_force: "gfd",
-    market_hours: "regular_hours",
+    market_hours: hours,
     ref_id: input.refId,
   };
+  // Always the regular-hours broker form. Off-hours it is stored locally and attached at the open.
   const stop: EquityOrderArgs = {
     account_number: input.accountNumber,
     symbol: input.symbol,
@@ -69,10 +76,10 @@ export function buildEntryBundle(input: {
     quantity: qty,
     limit_price: moneyString(Math.max(targetPrice, roundMoney(input.ask + 0.01))),
     time_in_force: "gtc",
-    market_hours: "regular_hours",
+    market_hours: hours,
     ref_id: `${input.refId}-target`,
   };
-  return { entry, stop, takeProfit, quantity, notional, stopPrice, targetPrice: Number(takeProfit.limit_price) };
+  return { entry, stop, takeProfit, quantity, notional, stopPrice, targetPrice: Number(takeProfit.limit_price), stopKind };
 }
 
 export function buildExitLimit(input: {

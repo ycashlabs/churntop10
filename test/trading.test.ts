@@ -66,7 +66,7 @@ describe("new buy guards", () => {
     expect(add.ok).toBe(true);
   });
 
-  it("stops new buys on the kill switch, view only, daily loss, pdt, session, and duplicate ref", () => {
+  it("stops new buys on the kill switch, view only, daily loss, pdt, the weekend close, and duplicate ref", () => {
     expect(validateNewBuy(ctx({ killed: true })).code).toBe("kill_switch");
     expect(validateNewBuy(ctx({ mode: "view_only" })).code).toBe("view_only");
     expect(validateNewBuy(ctx({ mode: "view_only" })).bundle?.stop.stop_price).toBeTruthy();
@@ -79,8 +79,7 @@ describe("new buy guards", () => {
     ];
     expect(dayTradeCount(trades, "2026-11-13")).toBe(3);
     expect(validateNewBuy(ctx({ dayTrades: trades })).code).toBe("pdt");
-    expect(validateNewBuy(ctx({ now: EXTENDED })).code).toBe("session");
-    expect(validateNewBuy(ctx({ now: OVERNIGHT })).code).toBe("session");
+    expect(validateNewBuy(ctx({ now: CLOSED })).code).toBe("session");
     expect(validateNewBuy(ctx({ usedRefIds: ["11111111-1111-4111-8111-111111111111"] })).code).toBe("duplicate");
   });
 

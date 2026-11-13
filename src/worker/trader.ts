@@ -8,7 +8,8 @@ import { formatShares, formatUsd, roundMoney } from "../lib/money.js";
 import { tradingMcpUrl } from "../lib/oauth.js";
 import { submitGatedTool } from "../lib/broker.js";
 import { assertOutgoing } from "../lib/requests.js";
-import { dailyLossAmount, dayTradeCount, validateExit, validateNewBuy, type GuardContext } from "../lib/validator.js";
+import { runSimulatorCycle, type SimState } from "../lib/simulator.js";
+import { dailyLossAmount, dayTradeCount, validateNewBuy, type GuardContext } from "../lib/validator.js";
 import { decryptString, importTokenKey } from "./crypto.js";
 import type { Env } from "./env.js";
 
@@ -58,9 +59,12 @@ export class AccountTrader extends DurableObject<Env> {
   async cycle(): Promise<Summary> {
     await this.seed();
     const book = await this.quoteBook();
-    await this.rollDay(book.quotes);
-    await this.manageExits(book.quotes);
-    await this.proposeEntries(book.quotes);
+    const now = new Date();
+    const fillEntries = this.env.ALLOW_LIVE_TRADING !== "1";
+    const { state, events } = runSimulatorCycle(await this.loadSim(), book.quotes, now, () => crypto.randomUUID(), book.source, fillEntries);
+    await this.saveSim(state);
+    for (const event of events) await this.audit(event.action, event.detail);
+    if (this.env.ALLOW_LIVE_TRADING === "1") await this.proposeLiveEntries(book.quotes, now);
     const summary = await this.buildSummary(book);
     await this.audit("cycle", { session: summary.session, mode: summary.mode, killed: summary.killed, quoteSource: summary.quoteSource });
     return summary;
@@ -223,11 +227,59 @@ export class AccountTrader extends DurableObject<Env> {
     return parseMcp(response.headers.get("content-type") ?? "", text);
   }
 
-  private async proposeEntries(quotes: QuoteView[]): Promise<void> {
+  private async loadSim(): Promise<SimState> {
+    const settings = await this.settings();
+    const top10 = (await this.env.DB.prepare("SELECT symbol FROM top10 ORDER BY rank").all<{ symbol: string }>()).results.map((row) => row.symbol);
+    const positions = (await this.env.DB.prepare("SELECT symbol, quantity, avg_cost, opened_on FROM sim_positions").all<PositionRow>()).results;
+    const orders = (await this.env.DB.prepare("SELECT id, ref_id, symbol, side, type, quantity, limit_price, stop_price, status, role, opened_on, created_at FROM sim_orders").all<OrderRow & { created_at: number }>()).results;
+    const dayTrades = (await this.env.DB.prepare("SELECT symbol, day FROM day_trades").all<{ symbol: string; day: string }>()).results;
+    const proposals = (await this.env.DB.prepare("SELECT id, ref_id, symbol, verdict, message, payload, created_at FROM proposals").all<{ id: string; ref_id: string; symbol: string; verdict: string; message: string; payload: string; created_at: number }>()).results;
+    return {
+      cash: settings.cash,
+      dayStartEquity: settings.day_start_equity,
+      dayStartDate: settings.day_start_date,
+      mode: settings.mode,
+      killed: settings.killed === 1,
+      profitTargetPct: settings.profit_target_pct,
+      stopLossPct: settings.stop_loss_pct,
+      maxOrderPct: settings.max_order_pct,
+      dailyLossPct: settings.daily_loss_pct,
+      pdtLimit: settings.pdt_limit,
+      top10,
+      positions: positions.map((row) => ({ symbol: row.symbol, quantity: row.quantity, avgCost: row.avg_cost, openedOn: row.opened_on })),
+      orders: orders.map((row) => ({ id: row.id, refId: row.ref_id, symbol: row.symbol, side: row.side, type: row.type, quantity: row.quantity, limit: row.limit_price, stop: row.stop_price, status: row.status, role: row.role, openedOn: row.opened_on, createdAt: row.created_at })),
+      dayTrades,
+      proposals: proposals.map((row) => ({ id: row.id, refId: row.ref_id, symbol: row.symbol, verdict: row.verdict, message: row.message, payload: row.payload, createdAt: row.created_at })),
+      usedRefIds: proposals.map((row) => row.ref_id),
+    };
+  }
+
+  private async saveSim(state: SimState): Promise<void> {
+    await this.env.DB.prepare("UPDATE app_settings SET cash = ?, day_start_equity = ?, day_start_date = ? WHERE id = 1").bind(state.cash, state.dayStartEquity, state.dayStartDate).run();
+    await this.env.DB.prepare("DELETE FROM sim_positions").run();
+    await this.env.DB.prepare("DELETE FROM sim_orders").run();
+    await this.env.DB.prepare("DELETE FROM day_trades").run();
+    await this.env.DB.prepare("DELETE FROM proposals").run();
+    const statements = [
+      ...state.positions.map((position) => this.env.DB.prepare("INSERT INTO sim_positions (symbol, quantity, avg_cost, opened_on) VALUES (?, ?, ?, ?)").bind(position.symbol, position.quantity, position.avgCost, position.openedOn)),
+      ...state.orders.map((order) => this.env.DB.prepare("INSERT INTO sim_orders (id, ref_id, symbol, side, type, quantity, limit_price, stop_price, status, role, opened_on, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(order.id, order.refId, order.symbol, order.side, order.type, order.quantity, order.limit, order.stop, order.status, order.role, order.openedOn, order.createdAt)),
+      ...state.dayTrades.map((trade) => this.env.DB.prepare("INSERT INTO day_trades (id, symbol, day) VALUES (?, ?, ?)").bind(crypto.randomUUID(), trade.symbol, trade.day)),
+      ...state.proposals.map((proposal) => this.env.DB.prepare("INSERT INTO proposals (id, ref_id, symbol, verdict, message, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(proposal.id, proposal.refId, proposal.symbol, proposal.verdict, proposal.message, proposal.payload, proposal.createdAt)),
+    ];
+    if (statements.length > 0) await this.env.DB.batch(statements);
+  }
+
+  /** Live submits stay off unless the gate is armed. Off-hours, never send a broker stop. */
+  private async proposeLiveEntries(quotes: QuoteView[], now: Date): Promise<void> {
+    if (this.env.ALLOW_LIVE_TRADING !== "1") return;
+    if (marketSession(now) !== "regular") {
+      await this.audit("live_skipped", { reason: "off_hours_live_not_armed" });
+      return;
+    }
     const settings = await this.settings();
     const top10 = (await this.env.DB.prepare("SELECT symbol FROM top10 ORDER BY rank").all<{ symbol: string }>()).results.map((row) => row.symbol);
     const held = (await this.env.DB.prepare("SELECT symbol, quantity, avg_cost, opened_on FROM sim_positions").all<PositionRow>()).results;
-    const working = (await this.env.DB.prepare("SELECT symbol FROM sim_orders WHERE status = 'working'").all<{ symbol: string }>()).results.map((row) => row.symbol);
+    const working = (await this.env.DB.prepare("SELECT symbol FROM sim_orders WHERE status IN ('working', 'watching')").all<{ symbol: string }>()).results.map((row) => row.symbol);
     const trades = (await this.env.DB.prepare("SELECT symbol, day FROM day_trades").all<{ symbol: string; day: string }>()).results;
     const refs = (await this.env.DB.prepare("SELECT ref_id FROM proposals").all<{ ref_id: string }>()).results.map((row) => row.ref_id);
     const equity = this.equity(settings.cash, held, quotes);
@@ -236,7 +288,7 @@ export class AccountTrader extends DurableObject<Env> {
       const refId = crypto.randomUUID();
       const quote = quotes.find((item) => item.symbol === symbol);
       const guard: GuardContext = {
-        now: new Date(),
+        now,
         mode: settings.mode,
         killed: settings.killed === 1,
         top10,
@@ -250,7 +302,8 @@ export class AccountTrader extends DurableObject<Env> {
         dailyLossPct: settings.daily_loss_pct,
         dayTrades: trades,
         pdtLimit: settings.pdt_limit,
-        quote: quote ? { symbol: quote.symbol, bid: quote.bid, ask: quote.ask, last: quote.last, tradable: quote.tradable } : undefined,
+        quote: quote ? { symbol: quote.symbol, bid: quote.bid, ask: quote.ask, last: quote.last, tradable: quote.tradable, hasBidAsk: quote.hasBidAsk, asOf: quote.asOf } : undefined,
+        quoteSource: "robinhood",
         workingSymbols: working,
         usedRefIds: refs,
         agenticAllowed: true,
@@ -258,98 +311,26 @@ export class AccountTrader extends DurableObject<Env> {
         refId,
       };
       const verdict = validateNewBuy(guard);
-      const recent = await this.env.DB.prepare("SELECT verdict, created_at FROM proposals WHERE symbol = ? ORDER BY created_at DESC LIMIT 1").bind(symbol).first<{ verdict: string; created_at: number }>();
-      const duplicate = recent && recent.verdict === verdict.code && Date.now() - recent.created_at < 30 * 60 * 1000;
-      if (!duplicate) {
-        await this.env.DB.prepare("INSERT INTO proposals (id, ref_id, symbol, verdict, message, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), refId, symbol, verdict.code, verdict.message, JSON.stringify(verdict.bundle?.entry ?? null), Date.now()).run();
-      }
-      if (!verdict.ok || !verdict.bundle) continue;
-      const bundle = verdict.bundle;
-      if (this.env.ALLOW_LIVE_TRADING === "1") {
-        const token = await this.accessToken();
-        const accountNumber = token ? await this.agenticAccountNumber(token) : undefined;
-        if (!token || !accountNumber) {
-          await this.audit("live_skipped", { reason: "not_connected" });
-          continue;
-        }
-        bundle.entry.account_number = accountNumber;
-        bundle.stop.account_number = accountNumber;
-        const review = { ...bundle.entry };
-        delete review.ref_id;
-        try {
-          await submitGatedTool({ allowLive: this.env.ALLOW_LIVE_TRADING, tool: "review_equity_order", args: review, send: (tool, args) => this.mcpCall(token, tool, args) });
-          await submitGatedTool({ allowLive: this.env.ALLOW_LIVE_TRADING, tool: "place_equity_order", args: bundle.entry, send: (tool, args) => this.mcpCall(token, tool, args) });
-          await submitGatedTool({ allowLive: this.env.ALLOW_LIVE_TRADING, tool: "place_equity_order", args: bundle.stop, send: (tool, args) => this.mcpCall(token, tool, args) });
-        } catch (error) {
-          await this.audit("live_failed", { message: error instanceof Error ? error.name : "live_failed" });
-        }
+      if (!verdict.ok || !verdict.bundle || verdict.bundle.stopKind !== "broker") continue;
+      const token = await this.accessToken();
+      const accountNumber = token ? await this.agenticAccountNumber(token) : undefined;
+      if (!token || !accountNumber) {
+        await this.audit("live_skipped", { reason: "not_connected" });
         continue;
       }
-      await this.fillEntry(symbol, bundle.quantity, Number(bundle.entry.limit_price), Number(bundle.stop.stop_price), Number(bundle.takeProfit.limit_price), refId);
+      const bundle = verdict.bundle;
+      bundle.entry.account_number = accountNumber;
+      bundle.stop.account_number = accountNumber;
+      const review = { ...bundle.entry };
+      delete review.ref_id;
+      try {
+        await submitGatedTool({ allowLive: this.env.ALLOW_LIVE_TRADING, tool: "review_equity_order", args: review, send: (tool, args) => this.mcpCall(token, tool, args) });
+        await submitGatedTool({ allowLive: this.env.ALLOW_LIVE_TRADING, tool: "place_equity_order", args: bundle.entry, send: (tool, args) => this.mcpCall(token, tool, args) });
+        await submitGatedTool({ allowLive: this.env.ALLOW_LIVE_TRADING, tool: "place_equity_order", args: bundle.stop, send: (tool, args) => this.mcpCall(token, tool, args) });
+      } catch (error) {
+        await this.audit("live_failed", { message: error instanceof Error ? error.name : "live_failed" });
+      }
     }
-  }
-
-  private async fillEntry(symbol: string, quantity: number, price: number, stop: number, target: number, refId: string): Promise<void> {
-    const settings = await this.settings();
-    const cost = roundMoney(quantity * price);
-    if (cost > settings.cash) return;
-    const today = etParts(new Date()).date;
-    await this.env.DB.prepare("UPDATE app_settings SET cash = ? WHERE id = 1").bind(roundMoney(settings.cash - cost)).run();
-    const existing = await this.env.DB.prepare("SELECT quantity, avg_cost FROM sim_positions WHERE symbol = ?").bind(symbol).first<{ quantity: number; avg_cost: number }>();
-    if (existing) {
-      const totalQty = existing.quantity + quantity;
-      const avg = roundMoney((existing.quantity * existing.avg_cost + cost) / totalQty);
-      await this.env.DB.prepare("UPDATE sim_positions SET quantity = ?, avg_cost = ? WHERE symbol = ?").bind(totalQty, avg, symbol).run();
-    } else {
-      await this.env.DB.prepare("INSERT INTO sim_positions (symbol, quantity, avg_cost, opened_on) VALUES (?, ?, ?, ?)").bind(symbol, quantity, price, today).run();
-    }
-    const now = Date.now();
-    await this.insertOrder({ id: crypto.randomUUID(), refId, symbol, side: "buy", type: "limit", quantity, limit: price, stop: null, status: "filled", role: "entry", openedOn: today, now });
-    await this.insertOrder({ id: crypto.randomUUID(), refId: `${refId}-stop`, symbol, side: "sell", type: "stop_market", quantity, limit: null, stop, status: "working", role: "stop", openedOn: today, now });
-    await this.insertOrder({ id: crypto.randomUUID(), refId: `${refId}-target`, symbol, side: "sell", type: "limit", quantity, limit: target, stop: null, status: "working", role: "target", openedOn: today, now });
-  }
-
-  private async manageExits(quotes: QuoteView[]): Promise<void> {
-    const positions = (await this.env.DB.prepare("SELECT symbol, quantity, avg_cost, opened_on FROM sim_positions").all<PositionRow>()).results;
-    for (const position of positions) {
-      const quote = quotes.find((item) => item.symbol === position.symbol);
-      if (!quote) continue;
-      const stop = await this.env.DB.prepare("SELECT id, stop_price, quantity FROM sim_orders WHERE symbol = ? AND role = 'stop' AND status = 'working'").bind(position.symbol).first<{ id: string; stop_price: number; quantity: number }>();
-      const target = await this.env.DB.prepare("SELECT id, limit_price, quantity FROM sim_orders WHERE symbol = ? AND role = 'target' AND status = 'working'").bind(position.symbol).first<{ id: string; limit_price: number; quantity: number }>();
-      const hitStop = stop && quote.last <= stop.stop_price;
-      const hitTarget = target && quote.last >= target.limit_price;
-      if (!hitStop && !hitTarget) continue;
-      const exit = validateExit({ now: new Date(), killed: false, quantity: position.quantity, bid: quote.bid, kind: hitStop ? "stop" : "target" });
-      if (!exit.ok) continue;
-      const price = hitStop ? quote.bid : Number(target?.limit_price);
-      await this.closePosition(position, price, hitStop ? "stop" : "target");
-    }
-  }
-
-  private async closePosition(position: PositionRow, price: number, role: "stop" | "target"): Promise<void> {
-    const settings = await this.settings();
-    const proceeds = roundMoney(position.quantity * price);
-    await this.env.DB.prepare("UPDATE app_settings SET cash = ? WHERE id = 1").bind(roundMoney(settings.cash + proceeds)).run();
-    await this.env.DB.prepare("DELETE FROM sim_positions WHERE symbol = ?").bind(position.symbol).run();
-    await this.env.DB.prepare("UPDATE sim_orders SET status = 'cancelled' WHERE symbol = ? AND status = 'working' AND role IN ('stop', 'target')").bind(position.symbol).run();
-    const today = etParts(new Date()).date;
-    await this.insertOrder({ id: crypto.randomUUID(), refId: crypto.randomUUID(), symbol: position.symbol, side: "sell", type: role === "stop" ? "stop_market" : "limit", quantity: position.quantity, limit: role === "target" ? price : null, stop: role === "stop" ? price : null, status: "filled", role, openedOn: position.opened_on, now: Date.now() });
-    if (position.opened_on === today) {
-      await this.env.DB.prepare("INSERT INTO day_trades (id, symbol, day) VALUES (?, ?, ?)").bind(crypto.randomUUID(), position.symbol, today).run();
-    }
-  }
-
-  private async insertOrder(order: { id: string; refId: string; symbol: string; side: string; type: string; quantity: number; limit: number | null; stop: number | null; status: string; role: string; openedOn: string; now: number }): Promise<void> {
-    await this.env.DB.prepare("INSERT INTO sim_orders (id, ref_id, symbol, side, type, quantity, limit_price, stop_price, status, role, opened_on, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(order.id, order.refId, order.symbol, order.side, order.type, order.quantity, order.limit, order.stop, order.status, order.role, order.openedOn, order.now).run();
-  }
-
-  private async rollDay(quotes: QuoteView[]): Promise<void> {
-    const settings = await this.settings();
-    const today = etParts(new Date()).date;
-    if (settings.day_start_date === today) return;
-    const held = (await this.env.DB.prepare("SELECT symbol, quantity, avg_cost, opened_on FROM sim_positions").all<PositionRow>()).results;
-    const equity = this.equity(settings.cash, held, quotes);
-    await this.env.DB.prepare("UPDATE app_settings SET day_start_equity = ?, day_start_date = ? WHERE id = 1").bind(equity, today).run();
   }
 
   private equity(cash: number, positions: PositionRow[], quotes: QuoteView[]): number {

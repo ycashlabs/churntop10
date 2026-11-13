@@ -1,4 +1,5 @@
 import { businessDaysAgo, etParts, marketSession, type SessionName } from "./clock.js";
+import { quoteIsStale, spreadRatio, MAX_SPREAD } from "./exits.js";
 import { buildEntryBundle, type EntryBundle } from "./orders.js";
 import { roundMoney } from "./money.js";
 
@@ -28,7 +29,8 @@ export interface GuardContext {
   dailyLossPct: number;
   dayTrades: DayTrade[];
   pdtLimit: number;
-  quote?: { symbol: string; bid: number; ask: number; last: number; tradable: boolean };
+  quote?: { symbol: string; bid: number; ask: number; last: number; tradable: boolean; hasBidAsk?: boolean; asOf?: string; overnightEligible?: boolean };
+  quoteSource?: "recorded" | "robinhood";
   workingSymbols: string[];
   usedRefIds: string[];
   agenticAllowed: boolean;
@@ -52,6 +54,9 @@ const ORDER: string[] = [
   "top10",
   "already_working",
   "session",
+  "overnight",
+  "stale",
+  "spread",
   "daily_loss",
   "pdt",
   "cap",
@@ -123,8 +128,21 @@ export function validateNewBuy(ctx: GuardContext): Verdict {
     return fail("already_working", "An order for this symbol is already working.");
   }
   const session: SessionName = marketSession(ctx.now);
-  if (session !== "regular") {
-    return fail("session", "New buys run only in regular hours (9:30–16:00 ET), when a stop order can rest at the broker. Extended and overnight sessions allow exits only.");
+  if (session === "closed") {
+    return fail("session", "The market is closed from Friday 8:00 PM to Sunday 8:00 PM ET. New buys wait for the next session.");
+  }
+  if (session === "overnight" && quote.overnightEligible === false) {
+    return fail("overnight", "This symbol is not eligible for the 24 Hour Market, so it cannot be bought overnight.");
+  }
+  if (quoteIsStale(quote.asOf, ctx.now, ctx.quoteSource ?? "recorded")) {
+    return fail("stale", "The live quote is older than 5 minutes. New buys wait for a fresh print.");
+  }
+  if (quote.hasBidAsk === false) {
+    return fail("spread", "Bid or ask is missing. New buys need both sides of the quote.");
+  }
+  const spread = spreadRatio(quote.bid, quote.ask);
+  if (spread === undefined || spread > MAX_SPREAD) {
+    return fail("spread", "The bid-ask spread is wider than 1%. New buys wait for a tighter market.");
   }
   const loss = dailyLossAmount(ctx.equity, ctx.dayStartEquity);
   const lossCap = roundMoney(ctx.dayStartEquity * (ctx.dailyLossPct / 100));
@@ -154,6 +172,7 @@ export function validateNewBuy(ctx: GuardContext): Verdict {
     stopLossPct: ctx.stopLossPct,
     profitTargetDollars: roundMoney(sized.quantity * quote.ask * (ctx.stopLossPct / 100)),
     refId: ctx.refId,
+    session,
   });
   if (!bundle.stop.stop_price || Number(bundle.stop.stop_price) >= quote.ask) {
     return fail("stop", "Every new buy needs a stop below the entry.", bundle);
