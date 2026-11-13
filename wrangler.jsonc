@@ -1,0 +1,105 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "churntop10-dev",
+  "account_id": "f59b2545f5783d93b378006f3eb10bb4",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-11-13",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "logs": { "enabled": true, "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 1 }
+  },
+  "assets": {
+    "directory": "./dist/assets",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "TRADER", "class_name": "AccountTrader" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AccountTrader"] }],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "churntop10-dev",
+      "database_id": "00000000-0000-0000-0000-000000000001",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [{ "binding": "AUDIT", "bucket_name": "churntop10-audit-dev" }],
+  "vars": {
+    "ENVIRONMENT": "dev",
+    "ALLOW_LIVE_TRADING": "0",
+    "ACCESS_ENFORCE": "0",
+    "ACCESS_TEAM_DOMAIN": "",
+    "ACCESS_AUD": "",
+    "OWNER_EMAIL": "tom2258@gmail.com",
+    "ZONE": "ycashlabs.com",
+    "HOSTNAME": "top10-dev.ycashlabs.com"
+  },
+  "env": {
+    "dev": {
+      "name": "churntop10-dev",
+      "workers_dev": false,
+      "routes": [{ "pattern": "top10-dev.ycashlabs.com", "zone_name": "ycashlabs.com" }],
+      "triggers": { "crons": ["*/5 * * * *"] },
+      "durable_objects": {
+        "bindings": [{ "name": "TRADER", "class_name": "AccountTrader" }]
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "churntop10-dev",
+          "database_id": "00000000-0000-0000-0000-000000000001",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "r2_buckets": [{ "binding": "AUDIT", "bucket_name": "churntop10-audit-dev" }],
+      "vars": {
+        "ENVIRONMENT": "dev",
+        "ALLOW_LIVE_TRADING": "0",
+        "ACCESS_ENFORCE": "1",
+        "ACCESS_TEAM_DOMAIN": "",
+        "ACCESS_AUD": "",
+        "OWNER_EMAIL": "tom2258@gmail.com",
+        "ZONE": "ycashlabs.com",
+        "HOSTNAME": "top10-dev.ycashlabs.com"
+      }
+    },
+    "prod": {
+      "name": "churntop10-prod",
+      "workers_dev": false,
+      "routes": [{ "pattern": "top10.ycashlabs.com", "zone_name": "ycashlabs.com" }],
+      "triggers": { "crons": ["*/5 * * * *"] },
+      "durable_objects": {
+        "bindings": [{ "name": "TRADER", "class_name": "AccountTrader" }]
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "churntop10-prod",
+          "database_id": "00000000-0000-0000-0000-000000000002",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "r2_buckets": [{ "binding": "AUDIT", "bucket_name": "churntop10-audit-prod" }],
+      "vars": {
+        "ENVIRONMENT": "prod",
+        "ALLOW_LIVE_TRADING": "0",
+        "ACCESS_ENFORCE": "1",
+        "ACCESS_TEAM_DOMAIN": "",
+        "ACCESS_AUD": "",
+        "OWNER_EMAIL": "tom2258@gmail.com",
+        "ZONE": "ycashlabs.com",
+        "HOSTNAME": "top10.ycashlabs.com"
+      }
+    }
+  }
+}

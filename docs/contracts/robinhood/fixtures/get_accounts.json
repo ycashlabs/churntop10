@@ -1,0 +1,38 @@
+{
+  "data": {
+    "accounts": [
+      {
+        "account_number": "1000000362",
+        "rhs_account_number": "1000000362",
+        "type": "margin",
+        "unsettled_funds": "0.0000",
+        "brokerage_account_type": "individual",
+        "is_default": true,
+        "agentic_allowed": false,
+        "option_level": "",
+        "management_type": "self_directed",
+        "affiliate": "rhf",
+        "state": "active",
+        "deactivated": false,
+        "permanently_deactivated": false
+      },
+      {
+        "account_number": "2000004028",
+        "rhs_account_number": "2000004028",
+        "type": "limited_margin",
+        "unsettled_funds": "0.0000",
+        "brokerage_account_type": "individual",
+        "nickname": "MCP",
+        "is_default": false,
+        "agentic_allowed": true,
+        "option_level": "",
+        "management_type": "self_directed",
+        "affiliate": "rhf",
+        "state": "active",
+        "deactivated": false,
+        "permanently_deactivated": false
+      }
+    ]
+  },
+  "guide": "Present account_number masked to the last 4. There is exactly one agentic_allowed=true account. agentic_allowed is caller-relative."
+}

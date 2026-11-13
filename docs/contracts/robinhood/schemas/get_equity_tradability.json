@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "properties": {
+    "account_number": { "type": "string" },
+    "symbols": {
+      "type": ["null", "array"],
+      "items": { "type": "string" }
+    }
+  },
+  "required": ["account_number", "symbols"],
+  "additionalProperties": false
+}

@@ -1,0 +1,14 @@
+{
+  "type": "object",
+  "properties": {
+    "account_number": { "type": "string" },
+    "span": { "type": "string" },
+    "start_date": { "type": "string" },
+    "end_date": { "type": "string" },
+    "asset_classes": { "type": ["null", "array"], "items": { "type": "string" } },
+    "display_currency": { "type": "string" },
+    "timezone": { "type": "string" }
+  },
+  "required": ["account_number"],
+  "additionalProperties": false
+}
