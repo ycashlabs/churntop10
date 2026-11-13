@@ -10,7 +10,7 @@
     "noEmit": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "types": [],
+    "types": ["@cloudflare/workers-types"],
     "useUnknownInCatchVariables": true
   },
   "include": ["src/lib/**/*.ts", "src/worker/**/*.ts", "worker-configuration.d.ts"]

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { nextBucket, recoveryPublicBody } from "../src/lib/rate.js";
 import { accessDecision, verifyAccessJwt } from "../src/lib/access.js";
 import { applySecurityHeaders, CONTENT_SECURITY_POLICY, hostCookie, securityHeaders } from "../src/lib/headers.js";
 import { maskAccountNumber, redactJson } from "../src/lib/mask.js";
@@ -69,6 +70,19 @@ describe("access", () => {
       issuer: "https://ycashlabs.cloudflareaccess.com",
       email: "tom2258@gmail.com",
     })).rejects.toThrow(/expired/);
+  });
+});
+
+describe("limits and recovery", () => {
+  it("stops the next hit in the same window and never returns a recovery token", () => {
+    const first = nextBucket({ hits: 0, windowStart: 0, now: 1_000, limit: 2, windowMs: 60_000 });
+    const second = nextBucket({ hits: first.hits, windowStart: first.windowStart, now: 1_100, limit: 2, windowMs: 60_000 });
+    const third = nextBucket({ hits: second.hits, windowStart: second.windowStart, now: 1_200, limit: 2, windowMs: 60_000 });
+    expect(third.allow).toBe(false);
+    const body = recoveryPublicBody("prod");
+    expect(JSON.stringify(body)).not.toContain("token");
+    expect(body.delivery).toBe("email");
+    expect(recoveryPublicBody("dev").delivery).toBe("log");
   });
 });
 
