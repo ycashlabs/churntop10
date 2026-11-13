@@ -16,7 +16,7 @@ Five screens:
 - **Top 10** — the list that limits new buys. See [Top 10](#top-10).
 - **Rules** — the trading contract: named Buy rules and Sell rules the user edits and the bot proofreads. See [Rules](#rules) and the [draft starting rules](#draft-starting-rules-contract).
 - **Simulator** — a separate screen, fake money only. It can run any selected rules, including ones that are still Experimenting. It does not write into Account Summary.
-- **Settings** — percentage sizing, safety limits, and other owner controls. See [Percentage system](#percentage-system-very-important) and [Safety limits](#safety-limits).
+- **Settings** — safety limits and other owner controls. There are no buy amount fields. Sizing is defined in [Percentage system](#percentage-system-very-important), [Position cap](#position-cap-very-important), and [Scaling in](#scaling-in-very-important). See also [Safety limits](#safety-limits).
 
 ## Sell All Positions
 
@@ -55,17 +55,15 @@ The profit target (0.1–3%) and the stop-loss percent are based on the **positi
 
 ## Percentage system (very important)
 
-Agreed 13 November 2026. **Percentages only. Dollar caps are removed.**
+Agreed 13 November 2026. **Percentages only. Dollar caps are removed.** Settings has **no buy amount fields** — not a dollar min/max, and not a percentage min/max.
 
-The earlier Settings fields for a buy amount minimum and maximum in dollars are replaced by percentages. Sells have no dollar limit (and no dollar cap).
+Position sizing is fully covered by:
 
-The [position cap](#position-cap-very-important) and the [starter buy](#scaling-in-very-important) are already defined as percentages of total account balance (10% and 2% respectively).
+- the starter buy of 20% of the max position (**2% of account balance**)
+- later adds whose size is chosen by the signals
+- the per-symbol cap of **10% of account balance**
 
-### Open question
-
-Pending the user’s answer, and not yet decided:
-
-- Whether **buy sizes** (the percentage fields that replaced the old dollar min/max) are percentages of account balance.
+Sells have no dollar limit (and no dollar cap).
 
 ## Position cap (very important)
 
@@ -110,7 +108,7 @@ Every rule change, status change, and approval is logged to a database history t
 - **Add on strength** — add to an existing position when strength signals confirm, within the position cap and the scaling-in rules.
 - **Add on a healthy dip** — price is below average cost but still above the 20-minute low, there is no volume spike on the selling, and SPY is not falling hard.
 
-**Common buy constraints** (apply to every buy, including the starter and later adds): percentage sizing only (no dollar caps); stay inside the 10% position cap; buy only with available buying power and never on margin; Top 10 limits first buys of a new symbol; session, quote-quality, overnight whole-share, and eligibility rules in the 24/5 section; each add must have a signal-based reason and must log the signals, values, and chosen size.
+**Common buy constraints** (apply to every buy, including the starter and later adds): no buy amount fields in Settings; sizing is the 2% starter, signal-sized adds, and the 10% per-symbol cap (no dollar caps); buy only with available buying power and never on margin; Top 10 limits first buys of a new symbol; session, quote-quality, overnight whole-share, and eligibility rules in the 24/5 section; each add must have a signal-based reason and must log the signals, values, and chosen size.
 
 ### Sell rules
 
