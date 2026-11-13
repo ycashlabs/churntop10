@@ -90,7 +90,7 @@ Redirect is loopback `http://127.0.0.1:47621/callback` only. Do this on **prod**
 - D1 `churntop10-dev` now has `0001`–**`0006_trade_signals_name_reason.sql`**. `0005` recorded 8:12:02 AM CST / 14:12:02 UTC; **`0006` recorded 8:39:59 AM CST / 14:39:59 UTC**. Pre-`0006` Time Travel bookmark: `000000ae-00000000-00005122-254240f2ae5bdf4d41da1bcdc73d2c12`. Pre-`0005` bookmark: `000000a8-00000000-00005122-26fed85f6a2eb2ec034474f8838928a3`. PRAGMA shows `trade_signals` columns `trade_id, signal_id, value, passed, threshold, name, reason`.
 - No Robinhood token. Holdings sync uses the recorded TSLL fixture (prod must never use that fixture).
 - Conformance: [TEST-RESULTS.md](TEST-RESULTS.md). Local wrangler walk: 10 position trades carried signals and the Simulator table showed the DESIGN Fired / Not fired wording. Re-run after the prod promotion and NVDA backfill: **54 PASS**, **0 FAIL**, **9 NOT BUILT**. PR #10 is merged and on prod (same script SHA-256 as this currently deployed dev Worker).
-- Open feature PR: [PR #11](https://github.com/ycashlabs/churntop10/pull/11) (`cursor/session-load-error`). It shows the session-load error under `Loading…` (see DESIGN §6.1) and implements the D1 write reductions in DESIGN §8.5. Not merged. Deploy to **dev only** once D1 writes work again; do not deploy this branch to prod without go-ahead.
+- Open feature PR: [PR #11](https://github.com/ycashlabs/churntop10/pull/11) (`cursor/session-load-error`, head `584f475b82889382b90e80f4dbf60256bb6ff604`). It shows the session-load error under `Loading…` (see DESIGN §6.1) and implements the D1 write reductions in DESIGN §8.5. Not merged. Locally measured steady-state `saveSim` write statements: **668 before, 10 after**. A one-shot dev D1 write probe at **9:33 AM CST** inserted one `rate_limits` probe row (`changes: 1`, `rows_written: 2`), but the cleanup `DELETE` immediately failed with the same free-tier write-cap error. Writes are still blocked, so this branch was **not uploaded** to `churntop10-dev` (still Worker `08c1011c-…`). The probe row `__pr11_write_probe__` may remain until writes work and it can be deleted. Do not deploy this branch to prod without go-ahead.
 
 ### D1 free-tier write cap (13 November 2026)
 
@@ -101,7 +101,7 @@ Redirect is loopback `http://127.0.0.1:47621/callback` only. Do this on **prod**
 
 ### Open work / pending owner decisions
 
-- **Workers Paid vs wait for the D1 reset**: owner is deciding; do not change billing or the plan. After the reset or a paid upgrade, deploy PR #11 to **dev only**, then promote only with a later explicit go-ahead. A one-shot write probe should precede that dev deploy; if writes are still blocked, leave the PR ready and do not upload.
+- **Workers Paid vs wait for the D1 reset**: owner is deciding; do not change billing or the plan. The 9:33 AM CST write probe showed the cap still in force (cleanup delete failed). After the reset or a paid upgrade, deploy PR #11 to **dev only**, then promote only with a later explicit go-ahead.
 - **GitHub `workflow` scope**: required to add the dedicated `design` CI job in `.github/workflows/ci.yml`. Until then, `npm test` runs the check (see [ci-design-job.pending.yml](ci-design-job.pending.yml)).
 - Planned, not built: AI-created rules; rule points 0–100; weekly Saturday 9:00 AM CST review (owner routine, not a Worker cron); churncapital.com; live 24/5 engine; assign-sell-rule UI; Postgres / failover.
 
