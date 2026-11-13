@@ -148,14 +148,14 @@ await page.evaluate(() => {
   const field = [...document.querySelectorAll("label")].find((item) => item.innerText.includes("Trading capital, dollars"))?.querySelector("input");
   if (!field) throw new Error("no trading capital field");
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-  setter?.call(field, "8000");
+  setter?.call(field, "12000");
   field.dispatchEvent(new Event("input", { bubbles: true }));
 });
 await button("Save caps");
 await page.waitForFunction(() => {
   if (document.body.innerText.includes("Passkey confirmation failed")) throw new Error("save caps failed");
   const field = [...document.querySelectorAll("label")].find((item) => item.innerText.includes("Trading capital, dollars"))?.querySelector("input");
-  return field?.value === "8000";
+  return field?.value === "12000";
 });
 await shot("04-settings-custom-capital");
 
