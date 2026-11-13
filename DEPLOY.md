@@ -1,5 +1,7 @@
 # Deploy
 
+The agreed product redesign (not yet built) is in [docs/spec-v2.md](docs/spec-v2.md). This file remains the deploy and bindings record for the current app.
+
 This repository does not create Cloudflare resources and does not deploy. `npm run build` writes the two artifacts you upload:
 
 - `dist/index.js` — ES module Worker (`AccountTrader` is a named export, the default export is `fetch` + `scheduled`)

@@ -17,6 +17,8 @@ Open http://localhost:8787, create a passkey, and run a check from Top 10. Switc
 
 `npm run build` writes `dist/index.js` and `dist/assets/`. See [DEPLOY.md](DEPLOY.md), [ROLLBACK.md](ROLLBACK.md), and [docs/ACCESS.md](docs/ACCESS.md).
 
+The agreed product redesign (not yet built) is in [docs/spec-v2.md](docs/spec-v2.md). This README describes the app as it runs today.
+
 ## Checks
 
 ```bash
@@ -31,6 +33,7 @@ CI runs those on every push.
 
 ## Layout
 
+- `docs/spec-v2.md` — agreed v2 redesign (not yet built)
 - `docs/contracts/robinhood/` — MCP input schemas, required and optional response fields, recorded payloads
 - `src/lib/` — decoder, OAuth helpers, order builder, deterministic guards
 - `src/worker/` — Hono Worker, Access check, passkey, Durable Object `AccountTrader`
