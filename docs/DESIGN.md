@@ -120,7 +120,7 @@ Nav order, left to right: Account Summary, Top 10, Rules, Simulator, Review, Set
 
 **Sign-in** (`/` when unauthenticated or in recovery) is a separate shell (`signin`): title, short explanation, optional recovery banner, Create passkey or Sign in, recovery email form.
 
-**Shared position panel** (`PositionsPanel`) is used on Account Summary (**Live positions**) and Simulator (**Simulated positions**). Each open position is an article: symbol heading, qty @ avg · last · P&L, capital snapshot and target/stop and rule labels, a trades table (Side, Qty, Price, Status, Reason), and if open: **Edit capital** and **Edit target / stop**.
+**Shared position panel** (`PositionsPanel`) is used on Account Summary (**Live positions**) and Simulator (**Simulated positions**). Each open position is an article: symbol heading, qty @ avg · last · P&L, capital snapshot and target/stop and rule labels, a trades table (Side, Qty, Price, Status, Reason) with stored signals listed under the reason as specified in [§6](#6-screens-and-exact-ui-copy), and if open: **Edit capital** and **Edit target / stop**.
 
 There are no tooltips in the current UI (`title=` attributes are not used on controls). Status “badges” are the header `stamp` and each rule’s `stamp` class (`experimenting` / `proven` / `retired`) showing the raw status string.
 
@@ -302,6 +302,7 @@ All strings below are **verbatim** from `src/client/App.tsx` and `SESSION_HELP` 
 - Meta: `Trading capital snapshot {tradingCapital}. Target {profitTargetPct}% / stop {stopLossPct}% of average cost. {buyRule} · {sellRule}` (rule names omitted if missing; imported positions use buy rule `imported/manual`)
 - Trades table headers: `Side`, `Qty`, `Price`, `Status`, `Reason`
 - Empty trades: `No trades recorded yet.`
+- The Reason cell starts with the size reason, then a space and the exit reason when one is present. When the trade has stored signals, each signal is listed on its own following line in this exact form, via `formatTradeSignalLine`: `{name}: Fired. Value {value}, threshold {threshold}. {reason}` or `{name}: Not fired. Value {value}, threshold {threshold}. {reason}`. If `value` is null, omit the `Value …` clause, so the line is `{name}: Fired. {reason}` or `{name}: Not fired. {reason}`. If `value` is present and `threshold` is null, the clause is `Value {value}.`. Settings-only exits with no stored signals show only the size and exit reasons.
 - Buttons: `Edit capital` · `Edit target / stop`
 
 **Edit capital dialog**
@@ -528,7 +529,7 @@ Every **buy, add, and exit** trade the app writes must also write `trade_signals
 | `below_20m_avg` | last − 20m average | 0 | value < 0 |
 | `rising_volume` | second-half avg volume / first-half | 1 | value > 1 |
 
-Simulator `fillSimEntry` copies the computed signals onto `pendingLegs`, and `saveSim` / `insertTrade` persists them. The gated live path computes Proven buy-rule signals at placement time and stores them on the live trade. `listTrades` reloads `id`, `value`, `threshold`, and `fired` (names and reason text are not stored in D1).
+Simulator `fillSimEntry` copies the computed signals onto `pendingLegs`, and `saveSim` / `insertTrade` persists them. The gated live path computes Proven first-buy signals **before** placing and skips the order unless they all fire (`allRequiredSignalsFired`, same rule as the simulator: an empty list is allowed; otherwise every required signal must have fired), auditing `live_skipped` with message `First-buy signals did not confirm.` `insertTrade` stores `id`, `name`, `value`, `threshold`, `fired`, and `reason`. `listTrades` reloads those fields (`passed` maps to `fired`). If `name` was not stored (rows written before migration `0006`), it is filled from the signal catalog (`getSignal(id).name`, else the id) and `reason` stays empty. `positionViews` forwards the same fields to the client as `trade.signals`, and the shared trades table renders them with `formatTradeSignalLine` as specified in [§6](#6-screens-and-exact-ui-copy).
 
 Before this change, the prod NVDA simulator fills at 7:55 AM CST and 8:00 AM CST on 13 November 2026 had signals only on the `sim_entry` / `sim_add` audits and the proposal payloads. A backfill planner (`src/lib/trade-signals.ts`, `scripts/backfill-trade-signals.mjs`, `scripts/cf-templates/backfill-trade-signals.js`) reconstructs rows from those payloads. **Prod migration `0005` was applied at 8:26:53 AM CST** (pre-`0005` bookmark `0000009e-00000421-00005122-8bffaec3864d5a10a2b2344a5fcc94b5`; Worker `286f9178-e8f6-407f-b7c7-ab5cf6901144` uploaded 8:27:02 AM CST; rollback `1259682e-103a-491f-a6dd-9ab2b69f589a`). **Applying the backfill still waits for a second explicit owner OK.** A dry-run planned 3 rows for trade `3989afa2-7976-4b28-b703-4c5e0352a9a6` and 3 for add trade `5aa49ca9-f1c4-4622-aef6-8e1f8f4a0359` and inserted none.
 
@@ -551,9 +552,9 @@ Mark these clearly in any rebuild: they are **agreed product direction**, not pr
 
 ---
 
-## 10. Full schema (from migrations `0001`–`0005`)
+## 10. Full schema (from migrations `0001`–`0006`)
 
-Apply the numbered SQL files in order. Types are portable (`TEXT`, `INTEGER`, `REAL`); no SQLite-only types in these files. The v3 trading record is designed to move to Postgres later. Exact DDL is in `migrations/`. A fresh database is `0001` + `0002` + `0003` + `0004` + `0005`. A v2 database needs `0003` + `0004` + `0005` plus the data backfill `migrateV2Data` in `src/worker/storage/migrate.ts` (copies legacy `rules` / `sim_positions` / `sim_trades` into `trading_rules` / `positions` / `trades` when those are empty, seeds signals, and backfills `trading_capital` from `cash` when capital is 0). Record each file in Wrangler’s `d1_migrations(id, name, applied_at)`.
+Apply the numbered SQL files in order. Types are portable (`TEXT`, `INTEGER`, `REAL`); no SQLite-only types in these files. The v3 trading record is designed to move to Postgres later. Exact DDL is in `migrations/`. A fresh database is `0001` + `0002` + `0003` + `0004` + `0005` + `0006`. A v2 database needs `0003` + `0004` + `0005` plus the data backfill `migrateV2Data` in `src/worker/storage/migrate.ts` (copies legacy `rules` / `sim_positions` / `sim_trades` into `trading_rules` / `positions` / `trades` when those are empty, seeds signals, and backfills `trading_capital` from `cash` when capital is 0). Record each file in Wrangler’s `d1_migrations(id, name, applied_at)`.
 
 `mode` on `positions` is `live` or `sim`. `source` on `positions` is `app` (default) or `imported`. `source` on `trades` is `app` (default), `broker_import`, `broker_qty_change`, or `broker_close`. Re-buying a sold-out symbol opens a **new** position row.
 
@@ -593,7 +594,7 @@ Apply the numbered SQL files in order. Types are portable (`TEXT`, `INTEGER`, `R
 - **rule_signals** — `rule_version_id TEXT NOT NULL` FK → `rule_versions(id)`, `signal_id TEXT NOT NULL` FK → `signals(id)`, `params TEXT NOT NULL`, `PRIMARY KEY (rule_version_id, signal_id)`
 - **positions** — `id TEXT PK`, `mode TEXT NOT NULL`, `symbol TEXT NOT NULL`, `status TEXT NOT NULL`, `trading_capital_snapshot REAL NOT NULL`, `profit_target_pct REAL NOT NULL`, `stop_loss_pct REAL NOT NULL`, `buy_rule_version_id TEXT` FK → `rule_versions(id)`, `sell_rule_version_id TEXT` FK → `rule_versions(id)`, `avg_cost REAL NOT NULL`, `qty REAL NOT NULL`, `opened_at INTEGER NOT NULL`, `closed_at INTEGER`; indexes `positions_mode_status_idx (mode, status)`, `positions_symbol_idx (symbol)`
 - **trades** — `id TEXT PK`, `position_id TEXT NOT NULL` FK → `positions(id)`, `rule_version_id TEXT` FK → `rule_versions(id)`, `side TEXT NOT NULL`, `qty REAL NOT NULL`, `limit_price REAL`, `fill_price REAL`, `session TEXT NOT NULL`, `bid_at_order REAL`, `ask_at_order REAL`, `capital_snapshot REAL NOT NULL`, `size_reason TEXT NOT NULL`, `exit_reason TEXT`, `broker_order_id TEXT`, `status TEXT NOT NULL`, `created_at INTEGER NOT NULL`; index `trades_position_idx (position_id)`
-- **trade_signals** — `trade_id TEXT NOT NULL` FK → `trades(id)`, `signal_id TEXT NOT NULL` FK → `signals(id)`, `value REAL`, `passed INTEGER NOT NULL`, `PRIMARY KEY (trade_id, signal_id)`. Later: `threshold REAL` (`0005`).
+- **trade_signals** — `trade_id TEXT NOT NULL` FK → `trades(id)`, `signal_id TEXT NOT NULL` FK → `signals(id)`, `value REAL`, `passed INTEGER NOT NULL`, `PRIMARY KEY (trade_id, signal_id)`. Later: `threshold REAL` (`0005`); `name TEXT` and `reason TEXT` (`0006`).
 - **price_marks** — `id TEXT PK`, `position_id TEXT NOT NULL` FK → `positions(id)`, `at INTEGER NOT NULL`, `price REAL NOT NULL`; index `price_marks_position_at_idx (position_id, at)`
 - **position_reviews** — `position_id TEXT PK` FK → `positions(id)`, `pnl_dollars REAL NOT NULL`, `pnl_pct REAL NOT NULL`, `hold_minutes INTEGER NOT NULL`, `exit_type TEXT NOT NULL`, `best_price REAL`, `worst_price REAL`, `spy_change_at_entry REAL`, `session_at_entry TEXT`, `spread_cost REAL`, `adds_count INTEGER NOT NULL`, `adds_helped INTEGER`, `bot_note TEXT NOT NULL`, `user_note TEXT`, `created_at INTEGER NOT NULL`
 - **position_capital_history** — `id TEXT PK`, `position_id TEXT NOT NULL` FK → `positions(id)`, `old_value REAL NOT NULL`, `new_value REAL NOT NULL`, `at INTEGER NOT NULL`; index `position_capital_history_idx (position_id, at)`
@@ -614,7 +615,12 @@ The Worker also has `ensureLiveSync()` to add `source` at runtime if a database 
 
 - `ALTER TABLE trade_signals ADD COLUMN threshold REAL;`
 
-The Worker has `ensureTradeSignalsSchema()` to add `threshold` at runtime if the database was opened before `0005` was applied. Prefer applying the migration and recording it in `d1_migrations`. Existing rows stay `NULL` until a new fill overwrites them or the backfill script is applied. Prod `0005` is applied; the NVDA backfill still needs a second explicit OK.
+The Worker has `ensureTradeSignalsSchema()` to add `threshold`, `name`, and `reason` at runtime if those columns are missing. Prefer applying the numbered migrations and recording them in `d1_migrations`. Existing rows stay `NULL` until a new fill overwrites them or the backfill script is applied. Prod `0005` is applied; the NVDA backfill still needs a second explicit OK. **Migration `0006` is dev-only until the owner approves a prod apply.**
+
+### 10.6 `0006_trade_signals_name_reason.sql`
+
+- `ALTER TABLE trade_signals ADD COLUMN name TEXT;`
+- `ALTER TABLE trade_signals ADD COLUMN reason TEXT;`
 
 Relationships (v3 trading core): `trading_rules` 1—N `rule_versions` 1—N `rule_signals` N—1 `signals`; `positions` 1—N `trades` 1—N `trade_signals`; `positions` 1—N `price_marks`, `position_capital_history`, `position_exit_settings_history`; `positions` 1—0..1 `position_reviews`.
 
@@ -757,6 +763,7 @@ Dates are America/Chicago unless noted. All of the following were agreed 13 Nove
 | 13 Nov 2026 | v3 deployed to prod (PR #7 / merge `f53af3e`); see [prod.md](prod.md) for version ids and the pre-`0003` Time Travel bookmark. |
 | 13 Nov 2026 | Holdings sync, live order records, simulator auto-start (PR #8). Migration `0004`. Promoted to prod the same day (merge `252b479`, Worker `1259682e-103a-491f-a6dd-9ab2b69f589a`). See [HANDOVER.md](HANDOVER.md). |
 | 13 Nov 2026 | Persist `trade_signals` (id, value, threshold, fired) on every buy/add/exit. Migration `0005` applied on prod at 8:26:53 AM CST (Worker `286f9178-…`, rollback `1259682e-…`). Backfill of the 7:55 / 8:00 AM CST NVDA sim fills was dry-run only; apply waits for a second OK. |
+| 13 Nov 2026 | Restore signal `name`/`reason` on `listTrades` (migration `0006`), require live `proposeLiveEntries` signals to fire before placing (same `allRequiredSignalsFired` rule as the simulator), and show stored signals on the trades table with the §6 wording. Dev only until a later prod go-ahead. `0006` is not on prod. |
 | 13 Nov 2026 (planned, not built) | AI-created Experimenting rules; AI approve/retire suggestions; rule points 0–100 with the weights in [§9](#9-planned-approved-not-built); weekly Saturday 9:00 AM CST review; churncapital.com later. |
 
 ---
@@ -790,8 +797,5 @@ These are accurate observations of the current tree. A rebuild should implement 
 13. **Creating a rule in the UI** sends an empty signal list. Draft seeds have signals; user-created rules do not get a signal picker yet.
 14. **Rule status in the stamp** is lowercase raw (`experimenting`), not “Experimenting.”
 15. **Signal `description`** stored in D1 is a copy of the name.
-16. **`listTrades` does not restore signal `name` or `reason`** from D1; those stay on the audit / proposal. Only `id`, `value`, `threshold`, and `fired` are persisted.
-17. **Live `proposeLiveEntries` still does not require signals to fire** before placing (it records computed signals after a guard pass). The simulator does require first-buy signals to fire.
-18. **`positionViews` does not forward `trade.signals`** (id, value, threshold, fired) to the client. `listTrades` loads them from D1; the Account Summary / Simulator trades table still shows only side, qty, price, status, and reason.
 
 End of design.

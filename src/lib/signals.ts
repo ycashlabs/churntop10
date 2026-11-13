@@ -58,6 +58,11 @@ export function signalStrength(results: SignalResult[]): number {
   return Math.min(1, fired.length / results.length);
 }
 
+/** Empty list (settings-only rules) is allowed; otherwise every required signal must have fired. */
+export function allRequiredSignalsFired(results: SignalResult[]): boolean {
+  return results.length === 0 || results.every((item) => item.fired);
+}
+
 function result(id: string, name: string, fired: boolean, value: number | null, reason: string, threshold: number | null = null): SignalResult {
   return { id, name, fired, value, threshold, reason };
 }

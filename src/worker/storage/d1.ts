@@ -10,6 +10,7 @@ import type {
   Storage,
   TradeRecord,
 } from "../../lib/storage.js";
+import { signalResultFromRow } from "../../lib/trade-signals.js";
 import { d1Mini, type MiniDb } from "./minidb.js";
 import { migrateV2Data, seedSignals as seedSignalRows } from "./migrate.js";
 
@@ -162,15 +163,8 @@ export function createMiniStorage(mini: MiniDb): Storage {
       const rows = await mini.all<Record<string, unknown>>("SELECT * FROM trades WHERE position_id = ? ORDER BY created_at", [positionId]);
       const trades = rows.map(asTrade);
       for (const trade of trades) {
-        const signals = await mini.all<{ signal_id: string; value: number | null; passed: number; threshold: number | null }>("SELECT signal_id, value, passed, threshold FROM trade_signals WHERE trade_id = ?", [trade.id]);
-        trade.signals = signals.map((item) => ({
-          id: item.signal_id,
-          name: item.signal_id,
-          fired: item.passed === 1,
-          value: item.value,
-          threshold: item.threshold,
-          reason: "",
-        }));
+        const signals = await mini.all<Record<string, unknown>>("SELECT * FROM trade_signals WHERE trade_id = ?", [trade.id]);
+        trade.signals = signals.map((item) => signalResultFromRow(item));
       }
       return trades;
     },
@@ -185,8 +179,8 @@ export function createMiniStorage(mini: MiniDb): Storage {
       if (trade.signals) {
         for (const signal of trade.signals) {
           await mini.exec(
-            "INSERT INTO trade_signals (trade_id, signal_id, value, passed, threshold) VALUES (?, ?, ?, ?, ?) ON CONFLICT (trade_id, signal_id) DO UPDATE SET value = excluded.value, passed = excluded.passed, threshold = excluded.threshold",
-            [trade.id, signal.id, signal.value, signal.fired ? 1 : 0, signal.threshold ?? null],
+            "INSERT INTO trade_signals (trade_id, signal_id, value, passed, threshold, name, reason) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (trade_id, signal_id) DO UPDATE SET value = excluded.value, passed = excluded.passed, threshold = excluded.threshold, name = excluded.name, reason = excluded.reason",
+            [trade.id, signal.id, signal.value, signal.fired ? 1 : 0, signal.threshold ?? null, signal.name, signal.reason],
           );
         }
       }

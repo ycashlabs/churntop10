@@ -16,12 +16,13 @@ Times are America/Chicago.
 
 | ID | Statement | Check |
 | --- | --- | --- |
-| S-01 | Fresh DB is migrations 0001–0005 in order, portable types | `test/migrate.test.ts`; files in `migrations/` |
+| S-01 | Fresh DB is migrations 0001–0006 in order, portable types | `test/migrate.test.ts`; files in `migrations/` |
 | S-02 | `positions` and `trades` have `source` default `app` (0004) | migrate test; PRAGMA on dev; prod already has 0004 |
-| S-03 | `trade_signals` has `threshold` (0005) | migrate test; PRAGMA on dev after 0005; prod until go-ahead |
+| S-03 | `trade_signals` has `threshold` (0005) | migrate test; PRAGMA on dev and prod (0005 applied) |
 | S-04 | v3 relationships: rules, versions, signals, positions, trades | migrate test; DESIGN §10 |
 | S-05 | `app_settings` seed columns include legacy `pdt_limit` and `max_order_pct` | seed SQL / migrate test |
-| S-06 | `trade_signals` persists `trade_id`, `signal_id`, `value`, `threshold`, `fired` | `test/trade-signals.test.ts`; schema |
+| S-06 | `trade_signals` persists `trade_id`, `signal_id`, `value`, `threshold`, `fired`, plus `name` and `reason` after 0006 | `test/trade-signals.test.ts`; schema |
+| S-07 | `trade_signals` has `name` and `reason` (0006) on this branch / dev | migrate test; PRAGMA on dev after 0006; not on prod until go-ahead |
 
 ## Settings and validation
 
@@ -50,6 +51,7 @@ Times are America/Chicago.
 | U-11 | Sign-in copy: one owner, Create passkey / Sign in, recovery | App.tsx; walk |
 | U-12 | Shared position panel: Edit capital, Edit target / stop, trades table headers | App.tsx |
 | U-13 | No `title=` tooltips on controls | App.tsx |
+| U-14 | Trades table lists stored signals with the DESIGN §6 `formatTradeSignalLine` wording | App.tsx; `test/trade-signals.test.ts`; headless walk when a trade is visible |
 
 ## Rules lifecycle
 
@@ -82,7 +84,8 @@ Times are America/Chicago.
 | H-02 | Prod disconnected never uses the TSLL fixture; dev may | trader holdings path; ENVIRONMENT check |
 | H-03 | Live app orders write positions/trades with broker_order_id and source=app | holdings tests |
 | H-04 | Simulator auto-start: tick when no open sim position | holdings `shouldTickSimulator` test |
-| H-05 | Every buy/add/exit writes `trade_signals` (id, value, threshold, fired) when signals were computed | `test/trade-signals.test.ts`; local sim cycle |
+| H-05 | Every buy/add/exit writes `trade_signals` (id, name, value, threshold, fired, reason) when signals were computed; `positionViews` forwards them | `test/trade-signals.test.ts`; local sim cycle; `/api/simulator` payload |
+| H-07 | Live `proposeLiveEntries` requires first-buy signals to fire before placing, matching the simulator | `test/trade-signals.test.ts`; trader source |
 | H-06 | Prod NVDA 7:55 fill has `trade_signals` rows | read-only prod D1 (expects none until go-ahead) |
 
 ## Review, Access, security

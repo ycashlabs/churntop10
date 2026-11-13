@@ -3,12 +3,12 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { computeSignals } from "../src/lib/signals.js";
+import { allRequiredSignalsFired, computeSignals } from "../src/lib/signals.js";
 import { recordsForPlacedLiveBuy } from "../src/lib/holdings.js";
 import { runSimulatorCycle, type SimState } from "../src/lib/simulator.js";
 import { DRAFT_RULES } from "../src/lib/rules.js";
 import type { QuoteView } from "../src/lib/decode.js";
-import { planBackfill, defaultThreshold } from "../src/lib/trade-signals.js";
+import { planBackfill, defaultThreshold, formatTradeSignalLine, signalResultFromRow } from "../src/lib/trade-signals.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OVERNIGHT = new Date("2026-11-15T21:00:00-05:00");
@@ -21,6 +21,15 @@ function applyFile(db: DatabaseSync, name: string): void {
   }
 }
 
+
+
+function applyAll(db: DatabaseSync, through = "0006_trade_signals_name_reason.sql"): void {
+  const files = ["0001_init.sql", "0002_v2.sql", "0003_v3.sql", "0004_live_sync.sql", "0005_trade_signals_threshold.sql", "0006_trade_signals_name_reason.sql"];
+  for (const name of files) {
+    applyFile(db, name);
+    if (name === through) break;
+  }
+}
 
 function draftRules() {
   const now = Date.now();
@@ -167,25 +176,42 @@ describe("live trade records include signals", () => {
 });
 
 describe("trade_signals persistence and backfill", () => {
-  it("insertTrade writes signal id, value, threshold, and fired, and listTrades reads them back", async () => {
+  it("persists signal id, name, value, threshold, fired, and reason, and listTrades mapping restores them", () => {
     const db = new DatabaseSync(":memory:");
-    for (const name of ["0001_init.sql", "0002_v2.sql", "0003_v3.sql", "0004_live_sync.sql", "0005_trade_signals_threshold.sql"]) {
-      applyFile(db, name);
-    }
-    for (const id of ["spy_up", "volume_above_recent"]) {
-      db.prepare("INSERT OR IGNORE INTO signals (id, name, description, status, added_at) VALUES (?, ?, ?, 'active', 10)").run(id, id, id);
+    applyAll(db);
+    for (const [id, name] of [["spy_up", "SPY is up"], ["volume_above_recent", "Volume above recent normal"]] as const) {
+      db.prepare("INSERT OR IGNORE INTO signals (id, name, description, status, added_at) VALUES (?, ?, ?, 'active', 10)").run(id, name, name);
     }
     db.prepare(`INSERT INTO positions (id, mode, symbol, status, trading_capital_snapshot, profit_target_pct, stop_loss_pct, avg_cost, qty, opened_at, source)
       VALUES ('pos-1', 'sim', 'NVDA', 'open', 10000, 1, 1, 169.27, 1, 10, 'app')`).run();
     db.prepare(`INSERT INTO trades (id, position_id, side, qty, fill_price, session, capital_snapshot, size_reason, status, created_at, source)
       VALUES ('tr-1', 'pos-1', 'buy', 1, 169.27, 'extended', 10000, 'starter', 'filled', 10, 'app')`).run();
-    const insert = db.prepare("INSERT INTO trade_signals (trade_id, signal_id, value, passed, threshold) VALUES (?, ?, ?, ?, ?) ON CONFLICT (trade_id, signal_id) DO UPDATE SET value = excluded.value, passed = excluded.passed, threshold = excluded.threshold");
-    insert.run("tr-1", "spy_up", 0.5025, 1, 0);
-    insert.run("tr-1", "volume_above_recent", 1.3833, 1, 1);
-    const rows = db.prepare("SELECT signal_id, value, passed, threshold FROM trade_signals WHERE trade_id = 'tr-1' ORDER BY signal_id").all() as Array<{ signal_id: string; value: number; passed: number; threshold: number }>;
-    expect(rows.map((row) => row.signal_id)).toEqual(["spy_up", "volume_above_recent"]);
-    expect(rows[0]).toMatchObject({ signal_id: "spy_up", value: 0.5025, passed: 1, threshold: 0 });
-    expect(rows[1]).toMatchObject({ signal_id: "volume_above_recent", value: 1.3833, passed: 1, threshold: 1 });
+    const insert = db.prepare("INSERT INTO trade_signals (trade_id, signal_id, value, passed, threshold, name, reason) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    insert.run("tr-1", "spy_up", 0.5025, 1, 0, "SPY is up", "SPY is up 0.5025%.");
+    insert.run("tr-1", "volume_above_recent", 1.3833, 1, 1, "Volume above recent normal", "Volume 12000 is above recent normal 8675.");
+    const rows = db.prepare("SELECT * FROM trade_signals WHERE trade_id = 'tr-1' ORDER BY signal_id").all() as Record<string, unknown>[];
+    expect(rows.map((row) => signalResultFromRow(row))).toEqual([
+      { id: "spy_up", name: "SPY is up", fired: true, value: 0.5025, threshold: 0, reason: "SPY is up 0.5025%." },
+      { id: "volume_above_recent", name: "Volume above recent normal", fired: true, value: 1.3833, threshold: 1, reason: "Volume 12000 is above recent normal 8675." },
+    ]);
+    const d1 = readFileSync(join(root, "src/worker/storage/d1.ts"), "utf8");
+    expect(d1).toContain("INSERT INTO trade_signals (trade_id, signal_id, value, passed, threshold, name, reason)");
+    expect(d1).toContain("signalResultFromRow");
+  });
+
+  it("listTrades mapping fills name from the signal catalog when name/reason were not stored", () => {
+    const db = new DatabaseSync(":memory:");
+    applyAll(db);
+    db.prepare("INSERT OR IGNORE INTO signals (id, name, description, status, added_at) VALUES ('spy_up', 'SPY is up', 'SPY is up', 'active', 10)").run();
+    db.prepare(`INSERT INTO positions (id, mode, symbol, status, trading_capital_snapshot, profit_target_pct, stop_loss_pct, avg_cost, qty, opened_at, source)
+      VALUES ('pos-1', 'sim', 'NVDA', 'open', 10000, 1, 1, 169.27, 1, 10, 'app')`).run();
+    db.prepare(`INSERT INTO trades (id, position_id, side, qty, fill_price, session, capital_snapshot, size_reason, status, created_at, source)
+      VALUES ('tr-1', 'pos-1', 'buy', 1, 169.27, 'extended', 10000, 'starter', 'filled', 10, 'app')`).run();
+    db.prepare("INSERT INTO trade_signals (trade_id, signal_id, value, passed, threshold) VALUES ('tr-1', 'spy_up', 0.5025, 1, 0)").run();
+    const row = db.prepare("SELECT * FROM trade_signals WHERE trade_id = 'tr-1'").get() as Record<string, unknown>;
+    expect(signalResultFromRow(row)).toEqual({
+      id: "spy_up", name: "SPY is up", fired: true, value: 0.5025, threshold: 0, reason: "",
+    });
   });
 
   it("plans a backfill for the prod NVDA sim fill from the sim_entry audit and proposal", () => {
@@ -212,5 +238,60 @@ describe("trade_signals persistence and backfill", () => {
     expect(rows.find((row) => row.signalId === "spy_up")).toMatchObject({ tradeId: "3989afa2-7976-4b28-b703-4c5e0352a9a6", value: 0.5025, threshold: 0, fired: true });
     expect(rows.find((row) => row.signalId === "volume_above_recent")?.threshold).toBe(1);
     expect(rows.find((row) => row.signalId === "price_above_20m_avg")?.threshold).toBe(0);
+  });
+});
+
+describe("signal display and live fire guard", () => {
+  it("formats a trades-table signal line with the DESIGN wording", () => {
+    expect(formatTradeSignalLine({
+      name: "Price above 20-minute average",
+      fired: true,
+      value: 0.5625,
+      threshold: 0,
+      reason: "Last 169.19 is above the 20-minute average 168.6275.",
+    })).toBe("Price above 20-minute average: Fired. Value 0.5625, threshold 0. Last 169.19 is above the 20-minute average 168.6275.");
+    expect(formatTradeSignalLine({
+      name: "SPY is up",
+      fired: false,
+      value: -0.2,
+      threshold: 0,
+      reason: "SPY is down 0.2%.",
+    })).toBe("SPY is up: Not fired. Value -0.2, threshold 0. SPY is down 0.2%.");
+    expect(formatTradeSignalLine({
+      name: "SPY is up",
+      fired: true,
+      value: null,
+      threshold: 0,
+      reason: "Not enough history.",
+    })).toBe("SPY is up: Fired. Not enough history.");
+    expect(formatTradeSignalLine({
+      name: "SPY is up",
+      fired: true,
+      value: 0.5,
+      threshold: null,
+      reason: "",
+    })).toBe("SPY is up: Fired. Value 0.5.");
+  });
+
+  it("allRequiredSignalsFired matches the simulator: empty is allowed, otherwise every signal must fire", () => {
+    expect(allRequiredSignalsFired([])).toBe(true);
+    expect(allRequiredSignalsFired([
+      { id: "spy_up", name: "SPY is up", fired: true, value: 0.5, threshold: 0, reason: "up" },
+    ])).toBe(true);
+    expect(allRequiredSignalsFired([
+      { id: "spy_up", name: "SPY is up", fired: true, value: 0.5, threshold: 0, reason: "up" },
+      { id: "volume_above_recent", name: "Volume above recent normal", fired: false, value: 0.5, threshold: 1, reason: "low" },
+    ])).toBe(false);
+  });
+
+  it("proposeLiveEntries requires first-buy signals to fire before place_equity_order, matching the simulator wording", () => {
+    const trader = readFileSync(join(root, "src/worker/trader.ts"), "utf8");
+    const start = trader.indexOf("private async proposeLiveEntries");
+    const end = trader.indexOf("private async buildSummary");
+    const fn = trader.slice(start, end);
+    expect(fn.indexOf("allRequiredSignalsFired")).toBeGreaterThan(-1);
+    expect(fn.indexOf("allRequiredSignalsFired")).toBeLessThan(fn.indexOf("place_equity_order"));
+    expect(fn).toContain("First-buy signals did not confirm.");
+    expect(fn.indexOf("allRequiredSignalsFired(liveSignals)")).toBeLessThan(fn.indexOf("submitGatedTool"));
   });
 });

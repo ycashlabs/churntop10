@@ -95,6 +95,15 @@ export interface TradingCapitalView {
   presets: Array<{ pct: number; dollars: number }>;
 }
 
+export interface PositionTradeSignalView {
+  id: string;
+  name: string;
+  value: number | null;
+  threshold: number | null;
+  fired: boolean;
+  reason: string;
+}
+
 export interface PositionTradeView {
   id: string;
   side: string;
@@ -105,6 +114,7 @@ export interface PositionTradeView {
   sizeReason: string;
   exitReason?: string;
   at: number;
+  signals?: PositionTradeSignalView[];
 }
 
 export interface PositionView {
