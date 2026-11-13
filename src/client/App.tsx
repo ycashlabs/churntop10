@@ -5,6 +5,7 @@ import { sessionBootstrapCopy } from "../lib/boot-copy";
 import { SESSION_HELP } from "../lib/clock";
 import { parseCallbackInput } from "../lib/oauth";
 import { getPendingConnect, getReviews, getRuleHistory, getRules, getSession, getSimulator, getSummary, loadCsrf, post, postJson, registerPasskey, signIn } from "./api";
+import { AuthenticatorSettings, StepUpHost, TotpSignIn } from "./totp-ui";
 
 type SettingsDraft = Summary["settings"];
 
@@ -67,6 +68,7 @@ export function App() {
   const page = path.startsWith("/top10") ? "top10" : path.startsWith("/rules") ? "rules" : path.startsWith("/simulator") ? "simulator" : path.startsWith("/review") ? "review" : path.startsWith("/settings") ? "settings" : "summary";
   return (
     <main className="shell">
+      <StepUpHost totpEnabled={!!session.totpEnabled} />
       <header>
         <div>
           <h1>Churn Top 10</h1>
@@ -95,7 +97,7 @@ export function App() {
       {page === "rules" && <RulesPage />}
       {page === "simulator" && <SimulatorPage />}
       {page === "review" && <ReviewPage />}
-      {page === "settings" && <SettingsPage summary={summary} onRun={run} />}
+      {page === "settings" && <SettingsPage summary={summary} totpEnabled={!!session.totpEnabled} onRun={run} onError={setError} onRefresh={refresh} />}
     </main>
   );
 }
@@ -107,7 +109,7 @@ function SignIn({ session, error, onDone }: { session: SessionView; error: strin
   return (
     <main className="shell signin">
       <h1>Churn Top 10</h1>
-      <p>One owner. Passkey to sign in. Email is only for recovery.</p>
+      <p>One owner. Sign in with your passkey, or with an authenticator code if you have set one up. Email is only for recovery.</p>
       {session.recovery && <p className="banner">Recovery confirmed. Register a new passkey to replace the old one.</p>}
       {params.get("recovery") === "invalid" && <p className="error">That recovery link is invalid or already used.</p>}
       {error && <p className="error">{error}</p>}
@@ -119,6 +121,7 @@ function SignIn({ session, error, onDone }: { session: SessionView; error: strin
           <button type="button" onClick={() => signIn().then(onDone).catch((err: unknown) => setNote(err instanceof Error ? err.message : "Could not sign in."))}>Sign in</button>
         )}
       </div>
+      {session.totpEnabled && !session.recovery && <TotpSignIn onDone={onDone} onNote={setNote} />}
       {!session.recovery && (
         <form onSubmit={(event) => {
           event.preventDefault();
@@ -193,7 +196,7 @@ function TopPage({ summary, onRun }: { summary: Summary; onRun: (action: () => P
   );
 }
 
-function SettingsPage({ summary, onRun }: { summary: Summary; onRun: (action: () => Promise<Summary | void>) => void }) {
+function SettingsPage({ summary, totpEnabled, onRun, onError, onRefresh }: { summary: Summary; totpEnabled: boolean; onRun: (action: () => Promise<Summary | void>) => void; onError: (message: string) => void; onRefresh: () => Promise<void> }) {
   const [draft, setDraft] = useState<SettingsDraft>(summary.settings);
   const [connectUrl, setConnectUrlState] = useState(() => sessionStorage.getItem(CONNECT_URL_KEY) ?? "");
   const [pasted, setPasted] = useState("");
@@ -324,7 +327,8 @@ function SettingsPage({ summary, onRun }: { summary: Summary; onRun: (action: ()
           })}>Disconnect Robinhood</button>
         </div>
       )}
-      <p>Saving caps, editing the Top 10 or a rule, marking a rule Proven, and switching to Live or connecting Robinhood each ask for the passkey again. Sell All Positions asks for a confirm step, not a passkey. It sells simulated positions only and does not place or cancel real Robinhood orders.</p>
+      <AuthenticatorSettings enabled={totpEnabled} onError={onError} onRefresh={onRefresh} />
+      <p>Saving caps, editing the Top 10 or a rule, marking a rule Proven, and switching to Live or connecting Robinhood each ask for the passkey again, or an authenticator code if you have set one up. Sell All Positions asks for a confirm step, not a passkey. It sells simulated positions only and does not place or cancel real Robinhood orders.</p>
     </section>
   );
 }

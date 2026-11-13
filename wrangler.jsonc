@@ -33,6 +33,12 @@
     }
   ],
   "r2_buckets": [{ "binding": "AUDIT", "bucket_name": "churntop10-audit-dev" }],
+  "send_email": [
+    {
+      "name": "EMAIL",
+      "destination_address": "tom2258@gmail.com"
+    }
+  ],
   "vars": {
     "ENVIRONMENT": "dev",
     "ALLOW_LIVE_TRADING": "0",
@@ -61,6 +67,7 @@
         }
       ],
       "r2_buckets": [{ "binding": "AUDIT", "bucket_name": "churntop10-audit-dev" }],
+      "send_email": [{ "name": "EMAIL", "destination_address": "tom2258@gmail.com" }],
       "vars": {
         "ENVIRONMENT": "dev",
         "ALLOW_LIVE_TRADING": "0",
@@ -89,6 +96,7 @@
         }
       ],
       "r2_buckets": [{ "binding": "AUDIT", "bucket_name": "churntop10-audit-prod" }],
+      "send_email": [{ "name": "EMAIL", "destination_address": "tom2258@gmail.com" }],
       "vars": {
         "ENVIRONMENT": "prod",
         "ALLOW_LIVE_TRADING": "0",

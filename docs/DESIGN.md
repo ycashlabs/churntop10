@@ -53,13 +53,13 @@ Live real-money trading stays off until the owner explicitly approves it. Until 
 - **R2** — durable audit objects (`audit/YYYY-MM-DD/<id>.json`). D1 `audit_index` is the index. If R2 write fails, the D1 row still stands.
 - **Durable Object** `AccountTrader` — trading state machine, simulator cycle, holdings sync, settings, quotes. SQLite class migration tag `v1` already exists; do not re-run `new_sqlite_classes` on a later deploy.
 - **Cloudflare Access** in front of each deployed hostname (owner-only allow policy). The Worker **re-checks** the Access JWT when `ACCESS_ENFORCE` is `"1"`.
-- **Passkey (WebAuthn)** app session on top of Access. Cookie `__Host-session`, 12 hours. Step-up (fresh passkey) lasts 5 minutes.
+- **Passkey (WebAuthn)** app session on top of Access. Cookie `__Host-session`, 12 hours. An **authenticator-app TOTP** (RFC 6238, 6 digits, 30s, SHA-1, ±1 step) is an alternative for sign-in and for the 5-minute step-up, once enrolled. A recovery session still cannot use the app.
 - **Robinhood Trading MCP** over OAuth. Access and refresh tokens are encrypted with Worker secret `TOKEN_KEY` and stored in D1 `rh_tokens`. Redirect URI is the loopback `http://127.0.0.1:47621/callback` (Robinhood’s public client does not allow a web callback).
 - **`ENVIRONMENT`** plain-text binding: `"dev"` or `"prod"`. **`ALLOW_LIVE_TRADING`** plain-text binding: must be `"0"` unless the owner has explicitly armed live trading.
 
 ### 2.2 Dev and prod separation
 
-Dev and prod are **separate everything**: Worker, D1, R2, Access application, Access audience, and `TOKEN_KEY`. They share no data and no credentials.
+Dev and prod are **separate everything**: Worker, D1, R2, Access application, Access audience, `TOKEN_KEY`, and `AUTH_KEY`. They share no data and no credentials.
 
 | | Dev | Prod |
 | --- | --- | --- |
@@ -74,6 +74,7 @@ Dev and prod are **separate everything**: Worker, D1, R2, Access application, Ac
 | `ALLOW_LIVE_TRADING` | `0` | `0` |
 | `ACCESS_ENFORCE` | `1` on the deployed env; `0` only in top-level local `wrangler.jsonc` | `1` |
 | `TOKEN_KEY` | its own secret | its own secret; never reuse dev’s |
+| `AUTH_KEY` | its own secret (encrypts the TOTP secret at rest) | its own secret; never reuse dev’s; do not set on prod until a prod go-ahead |
 
 Cloudflare account id used in the existing project: `f59b2545f5783d93b378006f3eb10bb4`. Zone `ycashlabs.com`.
 
@@ -118,7 +119,7 @@ Nav order, left to right: Account Summary, Top 10, Rules, Simulator, Review, Set
 - If `killed`: Sell All Positions is on banner.
 - Request errors as `<p className="error">`.
 
-**Sign-in** (`/` when unauthenticated or in recovery) is a separate shell (`signin`): title, short explanation, optional recovery banner, Create passkey or Sign in, recovery email form.
+**Sign-in** (`/` when unauthenticated or in recovery) is a separate shell (`signin`): title, short explanation, optional recovery banner, Create passkey or Sign in, optional authenticator-code form when TOTP is enrolled, recovery email form.
 
 **Shared position panel** (`PositionsPanel`) is used on Account Summary (**Live positions**) and Simulator (**Simulated positions**). Each open position is an article: symbol heading, qty @ avg · last · P&L, capital snapshot and target/stop and rule labels, a trades table (Side, Qty, Price, Status, Reason) with stored signals listed under the reason as specified in [§6](#6-screens-and-exact-ui-copy), and if open: **Edit capital** and **Edit target / stop**.
 
@@ -267,16 +268,30 @@ All strings below are **verbatim** from `src/client/App.tsx` and `SESSION_HELP` 
 
 ### 6.2 Sign-in
 
-- `One owner. Passkey to sign in. Email is only for recovery.`
+- `One owner. Sign in with your passkey, or with an authenticator code if you have set one up. Email is only for recovery.`
 - Banner: `Recovery confirmed. Register a new passkey to replace the old one.`
 - Error (query `recovery=invalid`): `That recovery link is invalid or already used.`
 - Button: `Create passkey` (when no credential, or recovery)
 - Button: `Sign in` (when already registered)
 - Failures: `Could not register.` · `Could not sign in.`
+- When TOTP is enrolled (and not in recovery): `Or sign in with an authenticator code.`
+- Label: `Authenticator code` or `Backup code`
+- Button: `Sign in with code`
+- Toggle: `Use a backup code` / `Use an authenticator code`
 - Label: `Recovery email` (input default value in code is `tom2258@gmail.com`, autocomplete `username`)
 - Button: `Email a recovery link`
 - Success note: `If that email is the owner, a recovery link was issued.`
-- Failure: `Could not start recovery.`
+- Failure: `Could not start recovery.` (or the Worker error `Recovery email could not be sent.` when the owner address matched but mail was not sent)
+
+**Confirm dialog** (step-up on 403 `stepUp: true`)
+
+- `Confirm with your passkey.`
+- Button: `Use passkey` · `Cancel`
+- Failure: `Passkey confirmation failed.`
+- When TOTP is enrolled and the request does not require a passkey-only step-up: `Or enter an authenticator code.`
+- Label: `Authenticator code` or `Backup code`
+- Button: `Confirm with code`
+- Toggle: `Use a backup code` / `Use an authenticator code`
 
 ### 6.3 Account Summary
 
@@ -342,7 +357,18 @@ All strings below are **verbatim** from `src/client/App.tsx` and `SESSION_HELP` 
 - Status: `Connected to {maskedAccount or "your account"}.` · `Not connected.` · error uses `robinhoodError` or `Robinhood could not be read.`
 - Buttons: `Reconnect Robinhood` · `Disconnect Robinhood`
 - Disconnect confirm (`window.confirm`): `Disconnect Robinhood? The app forgets its saved sign-in. Robinhood orders are not touched.`
-- Footer: `Saving caps, editing the Top 10 or a rule, marking a rule Proven, and switching to Live or connecting Robinhood each ask for the passkey again. Sell All Positions asks for a confirm step, not a passkey. It sells simulated positions only and does not place or cancel real Robinhood orders.`
+- Heading: `Authenticator app`
+- When not enrolled: `Use an authenticator app to sign in when a passkey is not available, for example on a remote desktop.`
+- Button: `Set up authenticator app`
+- During setup: `Scan this QR code with your authenticator app, or enter the setup key.`
+- Label: `Setup key` (read-only) · `Code from the app`
+- Buttons: `Confirm` · `Cancel`
+- After confirm: `Save these backup codes. Each can be used once. They will not be shown again.`
+- Button: `I saved these codes`
+- When enrolled: `An authenticator app is set up. You can sign in or confirm with a code from the app, or with a backup code.`
+- Buttons: `Turn off authenticator app` · `Set up again`
+- Failures: `Could not start authenticator setup.` · `Could not confirm the authenticator.` · `Could not turn off the authenticator.`
+- Footer: `Saving caps, editing the Top 10 or a rule, marking a rule Proven, and switching to Live or connecting Robinhood each ask for the passkey again, or an authenticator code if you have set one up. Sell All Positions asks for a confirm step, not a passkey. It sells simulated positions only and does not place or cancel real Robinhood orders.`
 
 **Sell All confirm**
 
@@ -427,7 +453,7 @@ Imported open holdings appear with `exitType` `imported`, buy rule `imported/man
 
 ### 6.9 Shared API / Worker error strings (surface in the error paragraph)
 
-`Unknown host.` · `Refresh the page and try again.` (CSRF) · `A passkey is already registered. Use recovery to replace it.` · `Missing passkey response.` · `Registration expired. Start again.` · `Passkey was not accepted.` · `A passkey is already registered.` · `Sign-in expired. Start again.` · `Unknown passkey.` · `Sign in first.` · `Sign in with your passkey.` · `Unknown mode.` · `Could not save settings.` · `Could not save the Top 10.` · `Could not edit capital.` · `Could not edit the target or stop.` · `Could not create the rule.` · `Could not edit the rule.` · `Could not change the rule status.` · `TOKEN_KEY is not configured.` · `Robinhood sign-in could not start.` · `Not found.` · `Something went wrong.` · `Confirm with your passkey.` · `Cloudflare Access is not configured.` · `Sign in through Cloudflare Access.` · `Cloudflare Access rejected this request.` · `Too many requests. Wait a minute and try again.` · `Passkey confirmation failed.`
+`Unknown host.` · `Refresh the page and try again.` (CSRF) · `A passkey is already registered. Use recovery to replace it.` · `Missing passkey response.` · `Registration expired. Start again.` · `Passkey was not accepted.` · `A passkey is already registered.` · `Sign-in expired. Start again.` · `Unknown passkey.` · `Sign in first.` · `Sign in with your passkey.` · `Unknown mode.` · `Could not save settings.` · `Could not save the Top 10.` · `Could not edit capital.` · `Could not edit the target or stop.` · `Could not create the rule.` · `Could not edit the rule.` · `Could not change the rule status.` · `TOKEN_KEY is not configured.` · `Robinhood sign-in could not start.` · `Not found.` · `Something went wrong.` · `Confirm with your passkey.` · `That code is not valid.` · `That code was already used.` · `Too many attempts. Try again later.` · `Authenticator app is not set up.` · `AUTH_KEY is not configured.` · `Recovery email could not be sent.` · `Setup expired. Start again.` · `Cloudflare Access is not configured.` · `Sign in through Cloudflare Access.` · `Cloudflare Access rejected this request.` · `Too many requests. Wait a minute and try again.` · `Passkey confirmation failed.`
 
 Passkey step-up (client): on HTTP 403 with `stepUp: true`, the client prompts WebAuthn again; if that fails the user sees `Passkey confirmation failed.`
 
@@ -582,8 +608,10 @@ Apply the numbered SQL files in order. Types are portable (`TEXT`, `INTEGER`, `R
 - **owner** — `id TEXT PK`, `email TEXT NOT NULL`, `created_at INTEGER NOT NULL`
 - **credentials** — `id TEXT PK`, `owner_id TEXT NOT NULL`, `public_key TEXT NOT NULL`, `counter INTEGER NOT NULL`, `transports TEXT NOT NULL DEFAULT ''`, `created_at INTEGER NOT NULL`
 - **challenges** — `id TEXT PK`, `kind TEXT NOT NULL`, `challenge TEXT NOT NULL`, `expires_at INTEGER NOT NULL`
-- **sessions** — `token_hash TEXT PK`, `owner_id TEXT NOT NULL`, `expires_at INTEGER NOT NULL`, `stepup_until INTEGER NOT NULL DEFAULT 0`, `recovery INTEGER NOT NULL DEFAULT 0`
+- **sessions** — `token_hash TEXT PK`, `owner_id TEXT NOT NULL`, `expires_at INTEGER NOT NULL`, `stepup_until INTEGER NOT NULL DEFAULT 0`, `recovery INTEGER NOT NULL DEFAULT 0`; later `auth_method TEXT NOT NULL DEFAULT 'passkey'`, `stepup_method TEXT NOT NULL DEFAULT ''` (`0007`). `auth_method` is `passkey`, `totp`, or `recovery`.
 - **magic_links** — `token_hash TEXT PK`, `email TEXT NOT NULL`, `expires_at INTEGER NOT NULL`, `used_at INTEGER`
+- **totp** (`0007`) — `id INTEGER PK CHECK (id = 1)`, `secret_ct TEXT NOT NULL`, `secret_iv TEXT NOT NULL`, `last_step INTEGER NOT NULL DEFAULT 0`, `enabled INTEGER NOT NULL DEFAULT 0`, `failed_attempts INTEGER NOT NULL DEFAULT 0`, `locked_until INTEGER NOT NULL DEFAULT 0`, `enrolled_at INTEGER NOT NULL`. The TOTP secret is AES-GCM encrypted with Worker secret `AUTH_KEY`. `last_step` prevents code replay. Five invalid codes lock the row for 15 minutes.
+- **totp_backup_codes** (`0007`) — `code_hash TEXT PK`, `used_at INTEGER`. Eight one-time backup codes, stored as SHA-256 of the normalized code, issued only at confirm.
 - **app_settings** — `id INTEGER PK CHECK (id = 1)`, `profit_target_pct REAL NOT NULL`, `stop_loss_pct REAL NOT NULL`, `max_order_pct REAL NOT NULL`, `daily_loss_pct REAL NOT NULL`, `pdt_limit INTEGER NOT NULL`, `mode TEXT NOT NULL`, `killed INTEGER NOT NULL`, `day_start_equity REAL NOT NULL`, `day_start_date TEXT NOT NULL`, `cash REAL NOT NULL`, `account_number TEXT NOT NULL`
   Later: `order_cap INTEGER NOT NULL DEFAULT 100` (`0002`), `trading_capital REAL NOT NULL DEFAULT 0` (`0003`)
 - **top10** — `rank INTEGER PK`, `symbol TEXT NOT NULL`
@@ -647,9 +675,9 @@ Relationships (v3 trading core): `trading_rules` 1—N `rule_versions` 1—N `ru
 
 ## 11. API routes
 
-CSRF: non-GET `/api/*` (except listed auth and callback paths) require the CSRF token issued by `GET /api/csrf`. Rate limits apply (for example reads 120/min). `GET /api/session` is the exception that uses an in-memory bucket and does not write D1. Authenticated API (except `/api/auth/*`, `/api/health`, `/api/csrf`, `/api/session`, `/api/robinhood/callback`) requires a passkey session and rejects a recovery-only session with `Sign in with your passkey.`
+CSRF: non-GET `/api/*` (except listed auth and callback paths) require the CSRF token issued by `GET /api/csrf`. Rate limits apply (for example reads 120/min). `GET /api/session` is the exception that uses an in-memory bucket and does not write D1. Authenticated API (except `/api/auth/*`, `/api/health`, `/api/csrf`, `/api/session`, `/api/robinhood/callback`) requires a non-recovery app session (opened with a passkey or with TOTP/backup code) and rejects a recovery-only session with `Sign in with your passkey.`
 
-**Passkey step-up** (5 minutes, error `Confirm with your passkey.`) is required for: `POST /api/mode`, `/api/settings`, `/api/top10`, `/api/positions/:id/exits`, `/api/rules`, `/api/rules/:id`, `/api/rules/:id/status`, `/api/robinhood/connect`, `/api/robinhood/disconnect`.
+**Step-up** (5 minutes, error `Confirm with your passkey.`, `stepUp: true`) is required for: `POST /api/mode` (when switching to live), `/api/settings`, `/api/top10`, `/api/positions/:id/exits`, `/api/rules`, `/api/rules/:id`, `/api/rules/:id/status`, `/api/robinhood/connect`, `/api/robinhood/disconnect`, and `/api/auth/totp/disable`. A valid passkey or, if TOTP is enrolled, a valid authenticator or backup code satisfies this step-up. **Enrollment and re-enrollment** (`/api/auth/totp/begin` and `/confirm`) require a *passkey* session plus a fresh *passkey* step-up (`stepUpMethod: "passkey"`), so TOTP cannot be enrolled from a TOTP-only session.
 
 **Not** step-up: Sell All, resume, cycle, simulator cycle, **Edit capital**, review notes, robinhood complete, reads.
 
@@ -657,11 +685,16 @@ CSRF: non-GET `/api/*` (except listed auth and callback paths) require the CSRF 
 | --- | --- | --- |
 | GET | `/api/health` | `{ ok: true }` |
 | GET | `/api/csrf` | Issue CSRF cookie/token |
-| GET | `/api/session` | Auth state (`authenticated`, `registered`, `recovery`, `stepUp`). Rate-limited in Worker memory (60/min per IP); does **not** write D1 `rate_limits`. |
+| GET | `/api/session` | Auth state (`authenticated`, `registered`, `recovery`, `stepUp`, `totpEnabled`, and `authMethod` when signed in). Rate-limited in Worker memory (60/min per IP); does **not** write D1 `rate_limits`. |
 | POST | `/api/auth/register/options` and `verify` | WebAuthn register |
 | POST | `/api/auth/login/options` and `verify` | WebAuthn login or step-up (`stepUp: true`) |
+| POST | `/api/auth/login/totp` | TOTP sign-in or step-up (`stepUp: true`). Rate-limited 5/min per IP; five invalid codes lock TOTP for 15 minutes. |
+| POST | `/api/auth/login/backup` | One-time backup-code sign-in or step-up (`stepUp: true`). Same rate limit and lockout. |
+| POST | `/api/auth/totp/begin` | Start enrollment: returns `otpauthUri` and `setupKey` once. Requires passkey step-up. Pending secret lives in `challenges` (`kind = totp_enroll`) for 10 minutes, encrypted. |
+| POST | `/api/auth/totp/confirm` | Confirm enrollment with a valid app code; issues eight backup codes once. Requires passkey step-up. |
+| POST | `/api/auth/totp/disable` | Delete the TOTP row and backup codes. Requires ordinary step-up. |
 | POST | `/api/auth/logout` | Clear session |
-| POST | `/api/auth/recovery` | Email a 15-minute magic link if the address is the owner |
+| POST | `/api/auth/recovery` | If the address is the owner, issue a 15-minute magic link. On localhost, log the raw token and return `{ ok: true, delivery: "log" }`. On a deployed host, send the mail with the `EMAIL` binding (`send_email`, `destination_address` `tom2258@gmail.com`, from `noreply@{ZONE}`) and return `{ ok: true, delivery: "email" }` only after a successful send; otherwise `503` `Recovery email could not be sent.` Never claim `delivery: "email"` when nothing was sent. A non-matching address returns `{ ok: true }` with no `delivery`. The raw token is never logged outside localhost. |
 | GET | `/api/auth/recovery/consume` | Consume link, start recovery session, redirect `/?recovery=1` or `/?recovery=invalid` |
 | GET | `/api/summary` | Account Summary payload (triggers holdings sync) |
 | POST | `/api/cycle` | Account cycle (live entries only if the gate is on) |
@@ -736,10 +769,10 @@ Masking: `maskAccountNumber` shows `••••` + last 4 (or `••••` if
 
 - One owner. Access policy is that mailbox only. **No Access bypass, no service tokens, no “everyone.”** Never add a service token to reach prod or dev without a new, explicit owner decision (the current design forbids it).
 - When `ACCESS_ENFORCE` is `"1"`, every request must carry `Cf-Access-Jwt-Assertion`. The Worker verifies RS256, `iss`, `aud` (must contain `ACCESS_AUD`), `exp`, and `email === OWNER_EMAIL`. If team or audience is empty while enforcement is on, return **503**, do not skip the check.
-- Passkey is the app session (12 hours, `__Host-session`). Recovery email is only for replacing a passkey (15-minute link).
+- Passkey is the primary app session (12 hours, `__Host-session`). An enrolled authenticator-app TOTP (or a one-time backup code) may open the same 12-hour session or satisfy the 5-minute step-up. Enrollment requires an existing passkey session and a fresh passkey step-up; the setup QR / `otpauth` URI and backup codes are shown once. The TOTP secret is encrypted at rest with `AUTH_KEY`. Codes are 6 digits, 30-second SHA-1 TOTP, ±1 step, with replay blocked via `last_step`. Five invalid attempts lock TOTP for 15 minutes. Recovery email is only for replacing a passkey (15-minute link) and must actually be sent on deployed hosts; a recovery session still cannot trade or call authenticated APIs.
 - **No real Robinhood orders** (place, cancel, modify) without the owner’s **explicit confirmation of that specific order**. `ALLOW_LIVE_TRADING` stays `"0"` unless they clearly say to turn it on.
 - Do not deploy to prod or change prod without an explicit go-ahead.
-- Secrets (`TOKEN_KEY`, tokens, cookies, passwords) only in Worker secrets / encrypted D1 columns, never in git, issues, or chat logs. Audit redaction as above.
+- Secrets (`TOKEN_KEY`, `AUTH_KEY`, tokens, cookies, TOTP secrets, recovery tokens, passwords) only in Worker secrets / encrypted or hashed D1 columns, never in git, issues, or chat logs. Audit redaction as above.
 - **Mask account numbers to last 4** in UI, logs, fixtures, docs, and conversation.
 - Dev and prod stay separate. Dev should not hold a live Robinhood token.
 - The bundle must remain eval-free.
@@ -752,11 +785,11 @@ Detailed commands and current ids: [DEPLOY.md](../DEPLOY.md), [ROLLBACK.md](../R
 
 1. **Cloudflare account and zone.** Workers, D1, R2, Access, and a custom domain on `ycashlabs.com` (or the clone’s zone).
 2. **Create, per environment:** D1 database, R2 audit bucket, Worker, Workers Custom Domain, Access application (Include → Emails → owner only, short session is fine). Record the Access audience.
-3. **Apply migrations** `0001`–`0006` in order via the D1 query API (one statement at a time is safest). Create `d1_migrations` and insert each filename so Wrangler will not replay them. Take a Time Travel bookmark **before** migrating an existing prod database.
-4. **Set bindings** exactly as in the tables in [dev.md](dev.md) / [prod.md](prod.md): D1, R2, DO `AccountTrader`, plain-text vars including `ALLOW_LIVE_TRADING=0`, `ACCESS_ENFORCE=1`, `ENVIRONMENT`, Access team and audience, `OWNER_EMAIL`, `HOSTNAME`, `ZONE`. Create a **new** `TOKEN_KEY` (`openssl rand -base64 32`) as a Worker **secret** per environment.
+3. **Apply migrations** `0001`–`0007` in order via the D1 query API (one statement at a time is safest). Create `d1_migrations` and insert each filename so Wrangler will not replay them. Take a Time Travel bookmark **before** migrating an existing prod database.
+4. **Set bindings** exactly as in the tables in [dev.md](dev.md) / [prod.md](prod.md): D1, R2, DO `AccountTrader`, `send_email` binding `EMAIL` restricted to `tom2258@gmail.com`, plain-text vars including `ALLOW_LIVE_TRADING=0`, `ACCESS_ENFORCE=1`, `ENVIRONMENT`, Access team and audience, `OWNER_EMAIL`, `HOSTNAME`, `ZONE`. Create a **new** `TOKEN_KEY` and a **new** `AUTH_KEY` (`openssl rand -base64 32` each) as Worker **secrets** per environment. Onboard `ycashlabs.com` to Cloudflare Email Sending so `noreply@ycashlabs.com` can send.
 5. **Build:** `npm install && npm run lint && npm run typecheck && npm test && npm run build && npm run check:html && npm run check:bundle && npm run check:design`. `npm run build` embeds the UI into `dist/index.js`.
-6. **Upload** the Worker with `multipart/form-data` (metadata JSON + `index.js` module). **No `assets` binding.** Pass `keep_bindings: ["secret_text"]` so `TOKEN_KEY` is not dropped. Abort the upload if `ALLOW_LIVE_TRADING` is not `"0"` or if an assets binding is present. Confirm cron `*/5 * * * *`.
-7. **Local:** `cp .dev.vars.example .dev.vars`, set `TOKEN_KEY`, `npm run dev`, open http://localhost:8787, create a passkey, walk Simulator / Settings. Access is off locally.
+6. **Upload** the Worker with `multipart/form-data` (metadata JSON + `index.js` module). **No `assets` binding.** Pass `keep_bindings: ["secret_text"]` so `TOKEN_KEY` and `AUTH_KEY` are not dropped. Abort the upload if `ALLOW_LIVE_TRADING` is not `"0"` or if an assets binding is present. Confirm cron `*/5 * * * *`.
+7. **Local:** `cp .dev.vars.example .dev.vars`, set `TOKEN_KEY` and `AUTH_KEY`, `npm run dev`, open http://localhost:8787, create a passkey, walk Simulator / Settings. Access is off locally. Recovery links are logged, not emailed, on localhost.
 8. **Rollback Worker code** using the previous version id ([ROLLBACK.md](../ROLLBACK.md)). This does **not** undo D1 rows, R2 objects, or DO storage. You cannot run an older Worker that expects a schema the DB no longer has if you also need to “un-migrate”; plan bookmarks before migrations. An older Worker can often run against *added* nullable/default columns; a newer Worker must not be pointed at a DB that lacks `0004` unless `ensureLiveSync` has run.
 9. **Promote to prod** only with an explicit go-ahead: bookmark, apply and record `0004` if needed, merge, upload to `churntop10-prod` with the same method, verify bindings and Access, leave the live gate at `"0"`. After the first cron or Account Summary load, prod will import **real** Robinhood holdings (not the dev fixture). Update [HANDOVER.md](HANDOVER.md) with the new version ids and state in the same change.
 
@@ -785,6 +818,8 @@ Dates are America/Chicago unless noted. All of the following were agreed 13 Nove
 | 13 Nov 2026 | Restore signal `name`/`reason` on `listTrades` (migration `0006`), require live `proposeLiveEntries` signals to fire before placing (same `allRequiredSignalsFired` rule as the simulator), and show stored signals on the trades table with the §6 wording. Promoted to prod the same day (merge `1376f96`, Worker `a776d60f-86da-460e-8512-b1abaa079e3b`, rollback `286f9178-…`). `0006` applied at 8:45:27 AM CST (pre-`0006` bookmark `000000a2-00000000-00005122-15227bc7e1bb4436c9211a513f305447`). The NVDA 7:55 / 8:00 AM CST backfill was applied in the 8:45 AM CST window (6 rows; rerun inserts 0). |
 | 13 Nov 2026 | If the session request fails, the first paint keeps `Loading…` and also shows the error (API `error`, else `Request failed.` or `Could not load.`). Promoted to prod the same day with the write-reduction work (PR #11, merge `e5a6667`, Worker `851a1db9-e7bd-4c52-972f-fc03a6a826d8`, rollback `a776d60f-…`). |
 | 13 Nov 2026 | Cut D1 writes on the cron path: incremental `quote_bars` plus a 24h prune; cap stored `proposals` to the last 12; skip no-op `sim_orders` / `sim_selected_rules` / `app_settings` rewrites; `db.batch()` remaining writes; skip unchanged position upserts and same-price `price_marks`; take `GET /api/session` off the `rate_limits` table (in-memory 60/min per IP). Locally measured steady-state saveSim statements dropped from 668 to 10. Promoted to prod the same day (merge `e5a6667`, Worker `851a1db9-e7bd-4c52-972f-fc03a6a826d8`, rollback `a776d60f-…`). Prod cron had been paused at 10:49:47 AM CST and was restored to `*/5 * * * *` at 11:32:01 AM CST after the upload. No new D1 migration. The account is on Workers Paid (owner upgrade; do not change the plan further without explicit approval). |
+| 13 Nov 2026 | Authenticator-app TOTP as an alternative to the in-app passkey for sign-in and step-up (RDP cannot complete the phone passkey). Enrollment only from a passkey session plus a fresh passkey step-up. Secret encrypted with `AUTH_KEY`. One-time hashed backup codes. Replay and lockout as in §11. Recovery email actually sends on deployed hosts via the `EMAIL` binding and must not claim `delivery: "email"` when nothing was sent. Dev-only until a later prod go-ahead (`AUTH_KEY` is not set on prod in this change). |
+| 13 Nov 2026 | Cloudflare Access for team `dawn-rice-07a4`: One-time PIN (`9f7436ed-2228-4fa3-863e-da8c93127752`) was added to `allowed_idps` on both the prod app (`8f553625-0283-41e0-8a63-c43789e8c3a5`) and the dev app (`d0a5f257-6f03-4bfc-b8a4-d104a7180e06`), alongside the existing Cloudflare IdP (`8a3b677e-fc9d-4d0d-a8b0-99d9fcd3fa48`). `auto_redirect_to_identity` stayed `false`. Policies were left unchanged and owner-only for `tom2258@gmail.com` (no bypass, no service tokens). This Access change is already live; it is not a substitute for the in-app passkey or TOTP. |
 | 13 Nov 2026 (planned, not built) | AI-created Experimenting rules; AI approve/retire suggestions; rule points 0–100 with the weights in [§9](#9-planned-approved-not-built); weekly Saturday 9:00 AM CST review; churncapital.com later. |
 
 ---

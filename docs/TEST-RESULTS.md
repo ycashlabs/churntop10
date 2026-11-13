@@ -1,18 +1,19 @@
 # Conformance results — Churn Top 10
 
-Run at Nov 13, 2026, 8:52 AM America/Chicago against the current tree. Checks follow [TEST-PLAN.md](TEST-PLAN.md) and [DESIGN.md](DESIGN.md). Headless UI checks do not capture screenshots.
+Run at Nov 13, 2026, 2:12 PM America/Chicago against the current tree. Checks follow [TEST-PLAN.md](TEST-PLAN.md) and [DESIGN.md](DESIGN.md). Headless UI checks do not capture screenshots.
 
-Summary: **54 PASS**, **0 FAIL**, **9 NOT BUILT** (63 tests).
+Summary: **56 PASS**, **0 FAIL**, **9 NOT BUILT** (65 tests).
 
 | Test ID | Area | Test description | Result | Failure reason |
 | --- | --- | --- | --- | --- |
-| S-01 | Schema | Fresh DB is migrations 0001–0006 in order, portable types | PASS |  |
+| S-01 | Schema | Fresh DB is migrations 0001–0007 in order, portable types | PASS |  |
 | S-02 | Schema | positions and trades have source default app (0004) | PASS |  |
 | S-03 | Schema | trade_signals has threshold (0005) on this branch / dev | PASS | 0005 exists in the repo. Applied and recorded on dev D1 at 8:12:02 AM CST (America/Chicago) and on prod D1 at 8:26:53 AM CST; PRAGMA shows threshold on both. |
 | S-04 | Schema | v3 relationships: rules, versions, signals, positions, trades | PASS |  |
 | S-05 | Schema | app_settings seed columns include legacy pdt_limit and max_order_pct | PASS |  |
 | S-06 | Schema | trade_signals persists trade_id, signal_id, value, threshold, fired, name, and reason | PASS |  |
 | S-07 | Schema | trade_signals has name and reason (0006) on this branch / dev | PASS | 0006 exists in the repo. Applied and recorded on dev D1 at 8:39:59 AM CST (America/Chicago) and on prod D1 at 8:45:27 AM CST; PRAGMA shows name and reason on both. |
+| S-08 | Schema | 0007 adds sessions auth_method/stepup_method, totp, and totp_backup_codes | PASS |  |
 | ST-01 | Settings | Defaults: profit/stop/daily loss 1%, order cap 100, capital 10000, view_only, not killed | PASS |  |
 | ST-02 | Settings | Percents: finite, > 0, ≤ 100; exact server messages from DESIGN §4 | PASS |  |
 | ST-03 | Settings | Order cap 1–1000; trading capital > 0, ≤ 1e9; exact messages | PASS |  |
@@ -30,7 +31,8 @@ Summary: **54 PASS**, **0 FAIL**, **9 NOT BUILT** (63 tests).
 | U-10 | UI | SESSION_HELP verbatim in clock.ts and on Summary / Settings | PASS | SESSION_HELP on Account Summary |
 | U-11 | UI | Sign-in copy: one owner, Create passkey / Sign in, recovery | PASS | sign-in copy visible |
 | U-12 | UI | Shared position panel: Edit capital, Edit target / stop, trades table headers | PASS | Edit capital / Edit target copy checked statically; panel renders when a position is open |
-| U-14 | UI | Trades table lists stored signals with the DESIGN §6 formatTradeSignalLine wording | PASS | Simulator trades table shows DESIGN signal wording (Fired / Not fired) |
+| U-14 | UI | Trades table lists stored signals with the DESIGN §6 formatTradeSignalLine wording | PASS |  |
+| U-15 | UI | Settings authenticator-app copy and sign-in code form | PASS |  |
 | U-13 | UI | No HTML title= tooltips on controls | PASS |  |
 | R-01 | Rules | Draft six seeds start Experimenting with verbatim bodies and signal lists | PASS |  |
 | R-02 | Rules | Only the user marks Proven / Retired; no auto-approve | PASS |  |
@@ -49,7 +51,7 @@ Summary: **54 PASS**, **0 FAIL**, **9 NOT BUILT** (63 tests).
 | H-02 | Holdings / live / simulator | Prod disconnected never uses the TSLL fixture; dev may | PASS |  |
 | H-03 | Holdings / live / simulator | Live app orders write positions/trades with broker_order_id and source=app | PASS |  |
 | H-04 | Holdings / live / simulator | Simulator auto-start: tick when no open sim position | PASS |  |
-| H-05 | Holdings / live / simulator | Every buy/add/exit writes trade_signals (id, name, value, threshold, fired, reason) when signals were computed; positionViews forwards them | PASS | simulator API returned 10 position trade(s); 10 carried signals (id, name, value, threshold, fired, reason) |
+| H-05 | Holdings / live / simulator | Every buy/add/exit writes trade_signals (id, name, value, threshold, fired, reason) when signals were computed; positionViews forwards them | PASS | simulator API returned 2 position trade(s); signals array on payload=0 (listTrades fields are not forwarded in positionViews; D1 checked separately) |
 | H-07 | Holdings / live / simulator | Live proposeLiveEntries requires first-buy signals to fire before placing, matching the simulator | PASS |  |
 | H-06 | Holdings / live / simulator | Prod NVDA 7:55 fill has trade_signals rows | PASS | Owner approved the apply at 8:43 AM CST. After prod 0006 (8:45:27 AM CST) a dry-run with name and reason planned the same 6 rows for trades 3989afa2-7976-4b28-b703-4c5e0352a9a6 and 5aa49ca9-f1c4-4622-aef6-8e1f8f4a0359; apply=true inserted 6 (changes 1 each). Each trade has 3 rows including name and reason. A rerun planned 0 (alreadyHadSignals). |
 | V-01 | Review / Access / security | Review lists imported open holdings with exitType imported and the imported bot note | PASS | imported holding visible on Review |
@@ -57,7 +59,7 @@ Summary: **54 PASS**, **0 FAIL**, **9 NOT BUILT** (63 tests).
 | A-02 | Review / Access / security | Passkey session 12 hours; step-up 5 minutes; Sell All and Edit capital are not step-up | PASS |  |
 | A-03 | Review / Access / security | submitGatedTool throws unless gate is 1; cancel/modify always refused | PASS |  |
 | A-04 | Review / Access / security | Account numbers masked to last 4; no eval / new Function in the Worker bundle | PASS |  |
-| A-05 | Review / Access / security | Unauthenticated prod and dev hosts 302 to Access | PASS | Unauthenticated GET / and /api/health on top10.ycashlabs.com and top10-dev.ycashlabs.com return HTTP 302 to dawn-rice-07a4.cloudflareaccess.com with kids b05d3bc5… (prod) and 3826fb97… (dev). Checked on prod at 8:45:38 AM CST after the PR #10 upload and reconfirmed at 8:52:49 AM CST. |
+| A-05 | Review / Access / security | Unauthenticated prod and dev hosts 302 to Access | PASS | Unauthenticated GET / and /api/health on top10.ycashlabs.com and top10-dev.ycashlabs.com return HTTP 302 to dawn-rice-07a4.cloudflareaccess.com with kids b05d3bc5… (prod) and 3826fb97… (dev). Reconfirmed on prod at 8:45:38 AM CST after the PR #10 upload. |
 | A-06 | Review / Access / security | Dev and prod ALLOW_LIVE_TRADING is 0 | PASS | Worker settings: ALLOW_LIVE_TRADING is 0 on churntop10-prod and churntop10-dev. TOKEN_KEY present as secret_text on both. |
 | A-07 | Review / Access / security | Cron is */5 * * * * on both Workers; no assets binding | PASS | Both Workers cron */5 * * * *; no ASSETS binding on the deployed scripts (has_assets false). Confirmed again after the 8:40:47 AM CST dev upload and the 8:45:31 AM CST prod upload. |
 | P-01 | Planned | AI-created Experimenting rules | NOT BUILT | Planned in DESIGN §9, not implemented. |

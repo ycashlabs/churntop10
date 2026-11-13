@@ -8,9 +8,10 @@ export function nextBucket(input: { hits: number; windowStart: number; now: numb
   return { allow: true, hits: input.hits + 1, windowStart: input.windowStart };
 }
 
-/** Body returned to the browser. The token itself is never included. */
-export function recoveryPublicBody(environment: string): { ok: true; delivery: "log" | "email" } {
-  return { ok: true, delivery: environment === "dev" ? "log" : "email" };
+/** Body returned to the browser. The token itself is never included. Only pass delivery when it actually happened. */
+export function recoveryPublicBody(delivery?: "log" | "email"): { ok: true; delivery?: "log" | "email" } {
+  if (delivery) return { ok: true, delivery };
+  return { ok: true };
 }
 
 const memoryBuckets = new Map<string, { hits: number; windowStart: number }>();

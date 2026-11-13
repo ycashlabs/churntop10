@@ -2,3 +2,5 @@
 # Generate with: openssl rand -base64 32
 # The value must decode to 32 bytes. Do not commit .dev.vars.
 TOKEN_KEY=
+# Separate from TOKEN_KEY. Also generate with: openssl rand -base64 32
+AUTH_KEY=

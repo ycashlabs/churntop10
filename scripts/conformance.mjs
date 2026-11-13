@@ -49,6 +49,7 @@ const migrate1 = read("migrations/0001_init.sql");
 const migrate4 = read("migrations/0004_live_sync.sql");
 const migrate5 = read("migrations/0005_trade_signals_threshold.sql");
 const migrate6 = read("migrations/0006_trade_signals_name_reason.sql");
+const migrate7 = read("migrations/0007_auth_totp.sql");
 const dist = existsSync(join(root, "dist/index.js")) ? read("dist/index.js") : "";
 const wrangler = read("wrangler.jsonc");
 
@@ -74,6 +75,7 @@ const migrations = [
   "0004_live_sync.sql",
   "0005_trade_signals_threshold.sql",
   "0006_trade_signals_name_reason.sql",
+  "0007_auth_totp.sql",
 ];
 
 function planned(reason) {
@@ -93,7 +95,7 @@ function fromSource(ok, reason) {
 }
 
 const catalog = [
-  { id: "S-01", area: "Schema", description: "Fresh DB is migrations 0001–0006 in order, portable types",
+  { id: "S-01", area: "Schema", description: "Fresh DB is migrations 0001–0007 in order, portable types",
     check() {
       const names = sh("ls migrations").split("\n").filter((n) => n.endsWith(".sql")).sort();
       if (JSON.stringify(names) !== JSON.stringify(migrations)) return fail(`files ${names.join(", ")}`);
@@ -141,7 +143,20 @@ const catalog = [
         "0006 missing name/reason ALTER",
       );
     } },
-  { id: "ST-01", area: "Settings", description: "Defaults: profit/stop/daily loss 1%, order cap 100, capital 10000, view_only, not killed",
+    { id: "S-08", area: "Schema", description: "0007 adds sessions auth_method/stepup_method, totp, and totp_backup_codes",
+    check() {
+      return fromSource(
+        migrate7.includes("ALTER TABLE sessions ADD COLUMN auth_method TEXT NOT NULL DEFAULT 'passkey'")
+        && migrate7.includes("ALTER TABLE sessions ADD COLUMN stepup_method TEXT NOT NULL DEFAULT ''")
+        && migrate7.includes("CREATE TABLE totp")
+        && migrate7.includes("CREATE TABLE totp_backup_codes")
+        && migrate7.includes("secret_ct")
+        && migrate7.includes("last_step")
+        && migrate7.includes("code_hash"),
+        "0007 missing TOTP session columns or tables",
+      );
+    } },
+{ id: "ST-01", area: "Settings", description: "Defaults: profit/stop/daily loss 1%, order cap 100, capital 10000, view_only, not killed",
     check() {
       return fromSource(
         trader.includes("VALUES (1, 1, 1, 10, 1, 3, 100, 10000, 'view_only', 0, 10000"),
@@ -268,7 +283,7 @@ const catalog = [
   { id: "U-11", area: "UI", description: "Sign-in copy: one owner, Create passkey / Sign in, recovery",
     check() {
       const need = [
-        "One owner. Passkey to sign in. Email is only for recovery.",
+        "One owner. Sign in with your passkey, or with an authenticator code if you have set one up. Email is only for recovery.",
         "Create passkey",
         "Sign in",
         "Recovery email",
@@ -286,7 +301,21 @@ const catalog = [
       const need = ["formatTradeSignalLine", "trade.signals.map"];
       return fromSource(!includesAll(app, need), includesAll(app, need) || "App.tsx does not render formatTradeSignalLine for trade.signals");
     } },
-  { id: "U-13", area: "UI", description: "No HTML title= tooltips on controls",
+    { id: "U-15", area: "UI", description: "Settings authenticator-app copy and sign-in code form",
+    check() {
+      const totpUi = read("src/client/totp-ui.tsx");
+      const need = [
+        "Authenticator app",
+        "Set up authenticator app",
+        "Scan this QR code with your authenticator app, or enter the setup key.",
+        "Save these backup codes. Each can be used once. They will not be shown again.",
+        "Or sign in with an authenticator code.",
+        "Confirm with your passkey.",
+      ];
+      const missing = need.filter((n) => !totpUi.includes(n) && !app.includes(n));
+      return fromSource(missing.length === 0, `missing ${JSON.stringify(missing)}`);
+    } },
+{ id: "U-13", area: "UI", description: "No HTML title= tooltips on controls",
     check() {
       // React component props named title= (PositionsPanel title) are headings, not HTML tooltips.
       const htmlTitles = [...app.matchAll(/<([a-zA-Z]+)[^>]*\stitle=\{?"/g)].map((m) => m[1]);

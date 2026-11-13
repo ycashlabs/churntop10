@@ -24,10 +24,18 @@ export function base64ToBytes(value: string): Uint8Array {
   return bytes;
 }
 
-export async function importTokenKey(raw: string): Promise<CryptoKey> {
+export async function importAesKey(raw: string, name: string): Promise<CryptoKey> {
   const bytes = base64ToBytes(raw);
-  if (bytes.length !== 32) throw new Error("TOKEN_KEY must decode to 32 bytes");
+  if (bytes.length !== 32) throw new Error(`${name} must decode to 32 bytes`);
   return crypto.subtle.importKey("raw", bytes, "AES-GCM", false, ["encrypt", "decrypt"]);
+}
+
+export async function importTokenKey(raw: string): Promise<CryptoKey> {
+  return importAesKey(raw, "TOKEN_KEY");
+}
+
+export async function importAuthKey(raw: string): Promise<CryptoKey> {
+  return importAesKey(raw, "AUTH_KEY");
 }
 
 export async function encryptString(key: CryptoKey, plaintext: string): Promise<{ iv: string; ct: string }> {

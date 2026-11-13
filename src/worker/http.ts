@@ -97,20 +97,25 @@ export function clearCookie(c: AppContext, name: string): void {
   setCookie(c, name, "", 0);
 }
 
-export async function sessionToken(c: AppContext): Promise<{ ownerId: string; stepupUntil: number; recovery: boolean } | undefined> {
+export type SessionAuthMethod = "passkey" | "totp" | "recovery";
+
+export async function sessionToken(c: AppContext): Promise<{ ownerId: string; stepupUntil: number; recovery: boolean; authMethod: SessionAuthMethod; stepupMethod: string } | undefined> {
   const token = readCookie(c.req.header("cookie"), "__Host-session");
   if (!token) return undefined;
   const hash = await sha256Hex(token);
-  const row = await c.env.DB.prepare("SELECT owner_id, expires_at, stepup_until, recovery FROM sessions WHERE token_hash = ?").bind(hash).first<{ owner_id: string; expires_at: number; stepup_until: number; recovery: number }>();
+  const row = await c.env.DB.prepare("SELECT owner_id, expires_at, stepup_until, recovery, auth_method, stepup_method FROM sessions WHERE token_hash = ?").bind(hash).first<{ owner_id: string; expires_at: number; stepup_until: number; recovery: number; auth_method: string; stepup_method: string }>();
   if (!row || row.expires_at < Date.now()) return undefined;
-  return { ownerId: row.owner_id, stepupUntil: row.stepup_until, recovery: row.recovery === 1 };
+  const authMethod = row.auth_method === "totp" || row.auth_method === "recovery" || row.auth_method === "passkey" ? row.auth_method : "passkey";
+  return { ownerId: row.owner_id, stepupUntil: row.stepup_until, recovery: row.recovery === 1, authMethod, stepupMethod: row.stepup_method ?? "" };
 }
 
-export async function startSession(c: AppContext, ownerId: string, recovery = false): Promise<void> {
+export async function startSession(c: AppContext, ownerId: string, options: { recovery?: boolean; authMethod?: SessionAuthMethod } = {}): Promise<void> {
   const token = randomToken(32);
   const hash = await sha256Hex(token);
   const expires = Date.now() + 12 * 60 * 60 * 1000;
-  await c.env.DB.prepare("INSERT INTO sessions (token_hash, owner_id, expires_at, stepup_until, recovery) VALUES (?, ?, ?, 0, ?)").bind(hash, ownerId, expires, recovery ? 1 : 0).run();
+  const recovery = options.recovery === true;
+  const authMethod = options.authMethod ?? (recovery ? "recovery" : "passkey");
+  await c.env.DB.prepare("INSERT INTO sessions (token_hash, owner_id, expires_at, stepup_until, recovery, auth_method, stepup_method) VALUES (?, ?, ?, 0, ?, ?, '')").bind(hash, ownerId, expires, recovery ? 1 : 0, authMethod).run();
   setCookie(c, "__Host-session", token, 12 * 60 * 60);
 }
 

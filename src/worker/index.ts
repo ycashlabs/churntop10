@@ -28,7 +28,9 @@ import {
   type AuthServerMetadata,
 } from "../lib/oauth.js";
 import { redactJson } from "../lib/mask.js";
-import { base64ToBytes, bytesToBase64, encryptString, importTokenKey, randomToken, sha256Hex } from "./crypto.js";
+import { base32Decode, base32Encode, generateBackupCodes, generateSecret, normalizeBackupCode, totpStepUpGate, verifyTotp } from "../lib/totp.js";
+import { checkTotpCode, consumeBackupCode, ownerOtpauth, sendRecoveryEmail, totpIsEnabled } from "./auth-totp.js";
+import { base64ToBytes, bytesToBase64, decryptString, encryptString, importAuthKey, importTokenKey, randomToken, sha256Hex } from "./crypto.js";
 import type { Env } from "./env.js";
 import { allowHost, clearCookie, csrfOk, enforceAccess, issueCsrf, rateLimit, readCookie, rpFromUrl, sessionToken, startSession, trader, type AppContext } from "./http.js";
 import { AccountTrader } from "./trader.js";
@@ -65,14 +67,17 @@ app.get("/api/session", async (c) => {
   if (limited) return limited;
   await issueCsrf(c);
   const registered = await c.env.DB.prepare("SELECT id FROM credentials LIMIT 1").first();
+  const totpEnabled = await totpIsEnabled(c.env.DB);
   const session = await sessionToken(c);
-  if (!session) return c.json({ authenticated: false, registered: !!registered });
+  if (!session) return c.json({ authenticated: false, registered: !!registered, totpEnabled });
   return c.json({
     authenticated: true,
     registered: true,
     email: c.env.OWNER_EMAIL,
     recovery: session.recovery,
     stepUp: session.stepupUntil > Date.now(),
+    totpEnabled,
+    authMethod: session.authMethod,
   });
 });
 
@@ -121,7 +126,7 @@ app.post("/api/auth/register/verify", async (c) => {
   await c.env.DB.prepare("INSERT INTO credentials (id, owner_id, public_key, counter, transports, created_at) VALUES (?, ?, ?, ?, ?, ?)").bind(cred.id, body.ownerId, bytesToBase64(cred.publicKey), cred.counter, (cred.transports ?? []).join(","), Date.now()).run();
   await c.env.DB.prepare("DELETE FROM challenges WHERE id = ?").bind(body.ownerId).run();
   if (session) await c.env.DB.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(await sha256Hex(readCookie(c.req.header("cookie"), "__Host-session") ?? "")).run();
-  await startSession(c, body.ownerId, false);
+  await startSession(c, body.ownerId, { authMethod: "passkey" });
   return c.json({ ok: true });
 });
 
@@ -165,10 +170,10 @@ app.post("/api/auth/login/verify", async (c) => {
     const session = await sessionToken(c);
     if (!session || session.ownerId !== credential.owner_id) return c.json({ error: "Sign in first." }, 401);
     const hash = await sha256Hex(readCookie(c.req.header("cookie"), "__Host-session") ?? "");
-    await c.env.DB.prepare("UPDATE sessions SET stepup_until = ? WHERE token_hash = ?").bind(Date.now() + 5 * 60 * 1000, hash).run();
+    await markStepUp(c, hash, "passkey");
     return c.json({ ok: true, stepUp: true });
   }
-  await startSession(c, credential.owner_id, false);
+  await startSession(c, credential.owner_id, { authMethod: "passkey" });
   return c.json({ ok: true });
 });
 
@@ -184,15 +189,20 @@ app.post("/api/auth/recovery", async (c) => {
   if (limited) return limited;
   const body = await c.req.json<{ email?: string }>().catch(() => ({ email: "" }));
   const email = (body.email ?? "").trim().toLowerCase();
-  if (email === c.env.OWNER_EMAIL.toLowerCase()) {
-    const token = randomToken(32);
-    await c.env.DB.prepare("INSERT INTO magic_links (token_hash, email, expires_at) VALUES (?, ?, ?)").bind(await sha256Hex(token), email, Date.now() + 15 * 60 * 1000).run();
-    const local = new URL(c.req.url).hostname === "localhost";
-    if (local) console.log(`dev recovery token ${token}`);
+  if (email !== c.env.OWNER_EMAIL.toLowerCase()) return c.json(recoveryPublicBody());
+  const token = randomToken(32);
+  await c.env.DB.prepare("INSERT INTO magic_links (token_hash, email, expires_at) VALUES (?, ?, ?)").bind(await sha256Hex(token), email, Date.now() + 15 * 60 * 1000).run();
+  const url = new URL(c.req.url);
+  const local = url.hostname === "localhost";
+  if (local) {
+    console.log(`dev recovery token ${token}`);
     await c.env.DB.prepare("INSERT INTO audit_index (id, at, action, detail) VALUES (?, ?, 'recovery', ?)").bind(crypto.randomUUID(), Date.now(), redactJson({ email: "owner" })).run();
-    return c.json(recoveryPublicBody(local ? "dev" : "prod"));
+    return c.json(recoveryPublicBody("log"));
   }
-  return c.json(recoveryPublicBody("prod"));
+  const sent = await sendRecoveryEmail(c.env, url, token);
+  if (!sent.ok) return c.json({ error: sent.error }, 503);
+  await c.env.DB.prepare("INSERT INTO audit_index (id, at, action, detail) VALUES (?, ?, 'recovery', ?)").bind(crypto.randomUUID(), Date.now(), redactJson({ email: "owner" })).run();
+  return c.json(recoveryPublicBody("email"));
 });
 
 app.get("/api/auth/recovery/consume", async (c) => {
@@ -208,8 +218,107 @@ app.get("/api/auth/recovery/consume", async (c) => {
     await c.env.DB.prepare("INSERT INTO owner (id, email, created_at) VALUES (?, ?, ?)").bind(id, c.env.OWNER_EMAIL, Date.now()).run();
     owner = { id };
   }
-  await startSession(c, owner.id, true);
+  await startSession(c, owner.id, { recovery: true, authMethod: "recovery" });
   return c.redirect("/?recovery=1");
+});
+
+
+app.post("/api/auth/login/totp", async (c) => {
+  const limited = await rateLimit(c, "totp", 5);
+  if (limited) return limited;
+  const body = await c.req.json<{ code?: string; stepUp?: boolean }>().catch(() => ({} as { code?: string; stepUp?: boolean }));
+  const result = await checkTotpCode(c, body.code ?? "");
+  if (!result.ok) return c.json({ error: result.error }, result.status);
+  if (body.stepUp) {
+    const session = await sessionToken(c);
+    const gate = totpStepUpGate(session, result.ownerId);
+    if (!gate.ok) return c.json({ error: gate.error }, gate.status);
+    const hash = await sha256Hex(readCookie(c.req.header("cookie"), "__Host-session") ?? "");
+    await markStepUp(c, hash, "totp");
+    return c.json({ ok: true, stepUp: true });
+  }
+  await startSession(c, result.ownerId, { authMethod: "totp" });
+  return c.json({ ok: true });
+});
+
+app.post("/api/auth/login/backup", async (c) => {
+  const limited = await rateLimit(c, "totp", 5);
+  if (limited) return limited;
+  const body = await c.req.json<{ code?: string; stepUp?: boolean }>().catch(() => ({} as { code?: string; stepUp?: boolean }));
+  const result = await consumeBackupCode(c, body.code ?? "");
+  if (!result.ok) return c.json({ error: result.error }, result.status);
+  if (body.stepUp) {
+    const session = await sessionToken(c);
+    const gate = totpStepUpGate(session, result.ownerId);
+    if (!gate.ok) return c.json({ error: gate.error }, gate.status);
+    const hash = await sha256Hex(readCookie(c.req.header("cookie"), "__Host-session") ?? "");
+    await markStepUp(c, hash, "totp");
+    return c.json({ ok: true, stepUp: true });
+  }
+  await startSession(c, result.ownerId, { authMethod: "totp" });
+  return c.json({ ok: true });
+});
+
+app.post("/api/auth/totp/begin", async (c) => {
+  const limited = await rateLimit(c, "auth", 10);
+  if (limited) return limited;
+  const blocked = await requirePasskeyStepUp(c);
+  if (blocked) return blocked;
+  if (!c.env.AUTH_KEY) return c.json({ error: "AUTH_KEY is not configured." }, 503);
+  const session = await sessionToken(c);
+  if (!session) return c.json({ error: "Sign in first." }, 401);
+  const setupKey = base32Encode(generateSecret());
+  const key = await importAuthKey(c.env.AUTH_KEY);
+  const packed = await encryptString(key, setupKey);
+  await c.env.DB.prepare("INSERT INTO challenges (id, kind, challenge, expires_at) VALUES (?, 'totp_enroll', ?, ?) ON CONFLICT(id) DO UPDATE SET challenge = excluded.challenge, expires_at = excluded.expires_at, kind = 'totp_enroll'").bind(session.ownerId, JSON.stringify(packed), Date.now() + 10 * 60 * 1000).run();
+  return c.json({ otpauthUri: ownerOtpauth(c.env.OWNER_EMAIL, setupKey), setupKey });
+});
+
+app.post("/api/auth/totp/confirm", async (c) => {
+  const limited = await rateLimit(c, "auth", 10);
+  if (limited) return limited;
+  const blocked = await requirePasskeyStepUp(c);
+  if (blocked) return blocked;
+  if (!c.env.AUTH_KEY) return c.json({ error: "AUTH_KEY is not configured." }, 503);
+  const session = await sessionToken(c);
+  if (!session) return c.json({ error: "Sign in first." }, 401);
+  const body = await c.req.json<{ code?: string }>().catch(() => ({ code: "" }));
+  const row = await c.env.DB.prepare("SELECT challenge, expires_at FROM challenges WHERE id = ? AND kind = 'totp_enroll'").bind(session.ownerId).first<{ challenge: string; expires_at: number }>();
+  if (!row || row.expires_at < Date.now()) return c.json({ error: "Setup expired. Start again." }, 400);
+  let setupKey: string;
+  let packed: { iv: string; ct: string };
+  try {
+    packed = JSON.parse(row.challenge) as { iv: string; ct: string };
+    const key = await importAuthKey(c.env.AUTH_KEY);
+    setupKey = await decryptString(key, packed.iv, packed.ct);
+  } catch {
+    return c.json({ error: "Setup expired. Start again." }, 400);
+  }
+  const secret = base32Decode(setupKey);
+  const verified = await verifyTotp(secret, body.code ?? "", { nowMs: Date.now(), lastStep: -1 });
+  if (!verified.ok) return c.json({ error: "That code is not valid." }, 401);
+  const backupCodes = generateBackupCodes();
+  const hashes = await Promise.all(backupCodes.map((code) => sha256Hex(normalizeBackupCode(code))));
+  const statements = [
+    c.env.DB.prepare("DELETE FROM totp_backup_codes"),
+    c.env.DB.prepare("INSERT INTO totp (id, secret_ct, secret_iv, last_step, enabled, failed_attempts, locked_until, enrolled_at) VALUES (1, ?, ?, ?, 1, 0, 0, ?) ON CONFLICT(id) DO UPDATE SET secret_ct = excluded.secret_ct, secret_iv = excluded.secret_iv, last_step = excluded.last_step, enabled = 1, failed_attempts = 0, locked_until = 0, enrolled_at = excluded.enrolled_at").bind(packed.ct, packed.iv, verified.step, Date.now()),
+    c.env.DB.prepare("DELETE FROM challenges WHERE id = ? AND kind = 'totp_enroll'").bind(session.ownerId),
+    ...hashes.map((hash) => c.env.DB.prepare("INSERT INTO totp_backup_codes (code_hash, used_at) VALUES (?, NULL)").bind(hash)),
+  ];
+  await c.env.DB.batch(statements);
+  return c.json({ backupCodes });
+});
+
+app.post("/api/auth/totp/disable", async (c) => {
+  const limited = await rateLimit(c, "auth", 10);
+  if (limited) return limited;
+  const blocked = await requireStepUp(c);
+  if (blocked) return blocked;
+  await c.env.DB.batch([
+    c.env.DB.prepare("DELETE FROM totp_backup_codes"),
+    c.env.DB.prepare("DELETE FROM totp"),
+  ]);
+  return c.json({ ok: true });
 });
 
 app.use("/api/*", async (c, next) => {
@@ -521,9 +630,21 @@ app.onError((error, c) => {
   return c.json({ error: "Something went wrong." }, 500);
 });
 
+async function markStepUp(c: AppContext, tokenHash: string, method: "passkey" | "totp"): Promise<void> {
+  await c.env.DB.prepare("UPDATE sessions SET stepup_until = ?, stepup_method = ? WHERE token_hash = ?").bind(Date.now() + 5 * 60 * 1000, method, tokenHash).run();
+}
+
+async function requirePasskeyStepUp(c: AppContext): Promise<Response | undefined> {
+  const session = await sessionToken(c);
+  if (!session || session.recovery) return c.json({ error: "Sign in with your passkey." }, 401);
+  if (session.stepupUntil <= Date.now() || session.stepupMethod !== "passkey") {
+    return c.json({ error: "Confirm with your passkey.", stepUp: true, stepUpMethod: "passkey" }, 403);
+  }
+}
+
 async function requireStepUp(c: AppContext): Promise<Response | undefined> {
   const session = await sessionToken(c);
-  if (!session || session.stepupUntil <= Date.now()) return c.json({ error: "Confirm with your passkey.", stepUp: true }, 403);
+  if (!session || session.recovery || session.stepupUntil <= Date.now()) return c.json({ error: "Confirm with your passkey.", stepUp: true }, 403);
   return undefined;
 }
 

@@ -79,10 +79,11 @@ describe("limits and recovery", () => {
     const second = nextBucket({ hits: first.hits, windowStart: first.windowStart, now: 1_100, limit: 2, windowMs: 60_000 });
     const third = nextBucket({ hits: second.hits, windowStart: second.windowStart, now: 1_200, limit: 2, windowMs: 60_000 });
     expect(third.allow).toBe(false);
-    const body = recoveryPublicBody("prod");
+    const body = recoveryPublicBody();
     expect(JSON.stringify(body)).not.toContain("token");
-    expect(body.delivery).toBe("email");
-    expect(recoveryPublicBody("dev").delivery).toBe("log");
+    expect(body.delivery).toBeUndefined();
+    expect(recoveryPublicBody("email").delivery).toBe("email");
+    expect(recoveryPublicBody("log").delivery).toBe("log");
   });
 });
 

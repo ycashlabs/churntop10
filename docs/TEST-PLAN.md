@@ -16,7 +16,8 @@ Times are America/Chicago.
 
 | ID | Statement | Check |
 | --- | --- | --- |
-| S-01 | Fresh DB is migrations 0001–0006 in order, portable types | `test/migrate.test.ts`; files in `migrations/` |
+| S-01 | Fresh DB is migrations 0001–0007 in order, portable types | `test/migrate.test.ts`; files in `migrations/` |
+| S-08 | `0007` adds `sessions.auth_method` / `stepup_method`, `totp`, and `totp_backup_codes` | migrate test; `migrations/0007_auth_totp.sql` |
 | S-02 | `positions` and `trades` have `source` default `app` (0004) | migrate test; PRAGMA on dev; prod already has 0004 |
 | S-03 | `trade_signals` has `threshold` (0005) | migrate test; PRAGMA on dev and prod (0005 applied) |
 | S-04 | v3 relationships: rules, versions, signals, positions, trades | migrate test; DESIGN §10 |
