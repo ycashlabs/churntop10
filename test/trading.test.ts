@@ -73,6 +73,7 @@ describe("new buy guards", () => {
     expect(validateNewBuy(ctx({ mode: "view_only", audience: "live" })).bundle?.stop.stop_price).toBeTruthy();
     expect(validateNewBuy(ctx({ equity: 9800, dayStartEquity: 10000 })).code).toBe("daily_loss");
     expect(dailyLossAmount(9800, 10000)).toBe(200);
+    expect(validateNewBuy(ctx({ equity: 8000, accountEquity: 10000, dayStartEquity: 10000, tradingCapital: 8000, dailyLossPct: 1 })).ok).toBe(true);
     expect(validateNewBuy(ctx({ orderCap: 3, ordersToday: 3 })).code).toBe("order_cap");
     expect(validateNewBuy(ctx({ audience: "live", hasProvenBuyRule: false })).code).toBe("proven");
     expect(validateNewBuy(ctx({ now: CLOSED })).code).toBe("session");

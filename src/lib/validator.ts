@@ -44,6 +44,8 @@ export interface GuardContext {
   hasProvenBuyRule?: boolean;
   tradingCapital?: number;
   openExposure?: number;
+  /** Real account equity for the daily loss stop. Sizing still uses `equity`. */
+  accountEquity?: number;
 }
 
 export interface Verdict {
@@ -142,7 +144,7 @@ export function validateNewBuy(ctx: GuardContext): Verdict {
   if (spread === undefined || spread > MAX_SPREAD) {
     return fail("spread", "The bid-ask spread is wider than 1%. New buys wait for a tighter market.");
   }
-  const loss = dailyLossAmount(ctx.equity, ctx.dayStartEquity);
+  const loss = dailyLossAmount(ctx.accountEquity ?? ctx.equity, ctx.dayStartEquity);
   const lossBasis = ctx.tradingCapital && ctx.tradingCapital > 0 ? ctx.tradingCapital : ctx.dayStartEquity;
   const lossCap = roundMoney(lossBasis * (ctx.dailyLossPct / 100));
   if (loss >= lossCap && lossCap > 0) {

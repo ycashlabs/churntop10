@@ -257,6 +257,7 @@ export function proposeSimEntries(
       top10: state.top10,
       held: state.positions.map((position) => ({ symbol: position.symbol, quantity: position.quantity, openedOn: position.openedOn, notional: roundMoney(position.quantity * position.avgCost) })),
       equity: snapshot,
+      accountEquity: equity,
       buyingPower: state.cash,
       dayStartEquity: state.dayStartEquity,
       profitTargetPct: held?.profitTargetPct ?? state.profitTargetPct,
