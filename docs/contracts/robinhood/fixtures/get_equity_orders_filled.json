@@ -1,0 +1,17 @@
+{
+  "data": {
+    "orders": [
+      {
+        "id": "11111111-2222-4333-8444-555555555555",
+        "symbol": "TSLL",
+        "side": "buy",
+        "type": "limit",
+        "state": "filled",
+        "quantity": "1.000000",
+        "price": "11.048000",
+        "average_price": "11.048000"
+      }
+    ]
+  },
+  "guide": "Synthetic filled order in the documented list shape. Present symbol, side, type, state, quantity, price, average_price, and id."
+}

@@ -1,0 +1,12 @@
+{
+  "data": {
+    "id": "11111111-2222-4333-8444-555555555555",
+    "symbol": "TSLL",
+    "side": "buy",
+    "type": "limit",
+    "state": "confirmed",
+    "quantity": "1.000000",
+    "price": "11.048000"
+  },
+  "guide": "Synthetic place_equity_order response. id is the broker order id used to reconcile later fills."
+}

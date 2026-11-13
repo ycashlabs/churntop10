@@ -1,13 +1,15 @@
 import { DurableObject } from "cloudflare:workers";
 import recordedQuotes from "../../docs/contracts/robinhood/fixtures/get_equity_quotes.json";
+import recordedHoldings from "../../docs/contracts/robinhood/fixtures/get_equity_positions_tsll.json";
 import type { Summary } from "../lib/api-types.js";
 import { etParts, marketSession } from "../lib/clock.js";
-import { displayField, parseAccounts, parsePortfolio, parseQuotes, parseRealizedPnl, selectAgentic, type QuoteView } from "../lib/decode.js";
+import { displayField, parseAccounts, parseOrders, parsePlacedOrder, parsePortfolio, parsePositions, parseQuotes, parseRealizedPnl, selectAgentic, type OrderView, type QuoteView } from "../lib/decode.js";
 import { maskAccountNumber, redactJson } from "../lib/mask.js";
 import { formatShares, formatUsd, roundMoney } from "../lib/money.js";
 import { tradingMcpUrl } from "../lib/oauth.js";
 import { submitGatedTool } from "../lib/broker.js";
 import { assertOutgoing } from "../lib/requests.js";
+import { applyOrderFill, labelBuyRule, recordsForPlacedLiveBuy, reconcileLiveHoldings, shouldComputeScores, type BrokerHolding } from "../lib/holdings.js";
 import { equityOf, ordersToday, runSimulatorCycle, sellAllSimPositions, type SimEvent, type SimState } from "../lib/simulator.js";
 import { dailyLossAmount, validExitPct, validateNewBuy, type GuardContext } from "../lib/validator.js";
 import type { RuleSide, RuleStatus } from "../lib/rules.js";
@@ -47,6 +49,7 @@ export class AccountTrader extends DurableObject<Env> {
 
   async summary(): Promise<Summary> {
     await this.seed();
+    await this.syncLiveHoldings();
     return this.buildSummary(await this.quoteBook());
   }
 
@@ -75,11 +78,10 @@ export class AccountTrader extends DurableObject<Env> {
 
   async tickSimulator(): Promise<void> {
     await this.seed();
-    const store = await this.store();
-    const open = await store.listPositions("sim", "open");
-    if (open.length === 0) return;
+    await this.syncLiveHoldings();
     await this.cycleSimulator();
-    await this.maybeComputeScores();
+    const closed = await (await this.store()).listPositions(undefined, "closed");
+    if (shouldComputeScores(closed.length)) await this.maybeComputeScores();
   }
 
   async simulator(): Promise<SimulatorView> {
@@ -200,6 +202,7 @@ export class AccountTrader extends DurableObject<Env> {
 
   private async seed(): Promise<void> {
     await this.ensureV2();
+    await this.ensureLiveSync();
     const existing = await this.env.DB.prepare("SELECT id FROM app_settings WHERE id = 1").first();
     if (!existing) {
       const today = etParts(new Date()).date;
@@ -209,6 +212,20 @@ export class AccountTrader extends DurableObject<Env> {
       await this.env.DB.batch(DEFAULT_TOP10.map((symbol, index) => this.env.DB.prepare("INSERT INTO top10 (rank, symbol) VALUES (?, ?)").bind(index + 1, symbol)));
     }
     await (await this.store()).seedDraftRules();
+  }
+
+
+  private async ensureLiveSync(): Promise<void> {
+    const addSource = async (table: string) => {
+      const cols = (await this.env.DB.prepare(`PRAGMA table_info(${table})`).all<{ name: string }>()).results.map((row) => row.name);
+      if (cols.length > 0 && !cols.includes("source")) {
+        await this.env.DB.prepare(`ALTER TABLE ${table} ADD COLUMN source TEXT NOT NULL DEFAULT 'app'`).run();
+      }
+    };
+    await addSource("positions");
+    await addSource("trades");
+    await this.env.DB.prepare("CREATE INDEX IF NOT EXISTS positions_mode_symbol_status_idx ON positions (mode, symbol, status)").run();
+    await this.env.DB.prepare("CREATE INDEX IF NOT EXISTS trades_broker_order_idx ON trades (broker_order_id)").run();
   }
 
   private async ensureV2(): Promise<void> {
@@ -247,7 +264,13 @@ export class AccountTrader extends DurableObject<Env> {
   private async liveQuotes(): Promise<QuoteView[] | undefined> {
     const token = await this.accessToken().catch(() => undefined);
     if (!token) return undefined;
-    const symbols = (await this.env.DB.prepare("SELECT symbol FROM top10 ORDER BY rank").all<{ symbol: string }>()).results.map((row) => row.symbol);
+    const top = (await this.env.DB.prepare("SELECT symbol FROM top10 ORDER BY rank").all<{ symbol: string }>()).results.map((row) => row.symbol);
+    const store = await this.store();
+    const held = [
+      ...(await store.listPositions("live", "open")),
+      ...(await store.listPositions("sim", "open")),
+    ].map((position) => position.symbol);
+    const symbols = [...new Set([...top, ...held])];
     if (symbols.length === 0) return undefined;
     try {
       const args = { symbols };
@@ -563,8 +586,24 @@ export class AccountTrader extends DurableObject<Env> {
       delete review.ref_id;
       try {
         await submitGatedTool({ allowLive: this.env.ALLOW_LIVE_TRADING, tool: "review_equity_order", args: review, send: (tool, args) => this.mcpCall(token, tool, args) });
-        await submitGatedTool({ allowLive: this.env.ALLOW_LIVE_TRADING, tool: "place_equity_order", args: bundle.entry, send: (tool, args) => this.mcpCall(token, tool, args) });
-        await submitGatedTool({ allowLive: this.env.ALLOW_LIVE_TRADING, tool: "place_equity_order", args: bundle.stop, send: (tool, args) => this.mcpCall(token, tool, args) });
+        const placed = await submitGatedTool({ allowLive: this.env.ALLOW_LIVE_TRADING, tool: "place_equity_order", args: bundle.entry, send: (tool, args) => this.mcpCall(token, tool, args) });
+        await this.recordLivePlacement({
+          payload: placed,
+          fallbackId: typeof bundle.entry.ref_id === "string" ? bundle.entry.ref_id : refId,
+          symbol,
+          quantity: Number(bundle.entry.quantity),
+          limitPrice: Number(bundle.entry.limit_price),
+          session: marketSession(now),
+          bid: quote?.bid,
+          ask: quote?.ask,
+          sizeReason: verdict.sizeReason ?? "Live starter buy.",
+        });
+        try {
+          const stopPlaced = await submitGatedTool({ allowLive: this.env.ALLOW_LIVE_TRADING, tool: "place_equity_order", args: bundle.stop, send: (tool, args) => this.mcpCall(token, tool, args) });
+          await this.recordLiveStop(symbol, stopPlaced, marketSession(now));
+        } catch (error) {
+          await this.audit("live_stop_failed", { message: error instanceof Error ? error.name : "live_stop_failed", symbol });
+        }
       } catch (error) {
         await this.audit("live_failed", { message: error instanceof Error ? error.name : "live_failed" });
       }
@@ -674,6 +713,7 @@ export class AccountTrader extends DurableObject<Env> {
   }
 
   private robinhoodError: string | undefined;
+  private snapshotCache?: { at: number; value: Summary["robinhood"] };
 
 
   async editPositionCapital(id: string, amount: number, confirm: boolean): Promise<{ ok: true }> {
@@ -714,8 +754,10 @@ export class AccountTrader extends DurableObject<Env> {
 
   async reviewScreen(filters: ReviewFilters): Promise<ReviewScreen> {
     await this.seed();
+    await this.syncLiveHoldings();
     const store = await this.store();
-    await this.maybeComputeScores();
+    const closed = await store.listPositions(undefined, "closed");
+    if (shouldComputeScores(closed.length)) await this.maybeComputeScores();
     const reviews = await store.listReviews(filters);
     const ruleScores = await store.latestRuleScoreSnapshots(filters.mode);
     const signalScores = await store.latestSignalScoreSnapshots(filters.mode);
@@ -739,7 +781,7 @@ export class AccountTrader extends DurableObject<Env> {
         addsHelped: row.addsHelped,
         botNote: row.botNote,
         userNote: row.userNote ?? "",
-        buyRule: row.buyRuleName,
+        buyRule: row.buyRuleName ?? (row.exitType === "imported" || row.exitType === "imported_close" ? "imported/manual" : undefined),
         sellRule: row.sellRuleName,
       })),
       ruleScores: ruleScores.map((row) => ({
@@ -790,7 +832,7 @@ export class AccountTrader extends DurableObject<Env> {
         tradingCapital: formatUsd(position.tradingCapitalSnapshot),
         profitTargetPct: position.profitTargetPct,
         stopLossPct: position.stopLossPct,
-        buyRule: buy ? `${buy.name} v${buy.version}` : undefined,
+        buyRule: buy ? `${buy.name} v${buy.version}` : labelBuyRule(position),
         sellRule: sell ? `${sell.name} v${sell.version}` : undefined,
         trades: trades.map((trade) => ({
           id: trade.id,
@@ -848,6 +890,8 @@ export class AccountTrader extends DurableObject<Env> {
     const periodEnd = now;
     const periodStart = now - day;
     if (last && now - last < day) return;
+    const closed = await store.listPositions(undefined, "closed");
+    if (!shouldComputeScores(closed.length)) return;
     await this.computeScores(periodStart, periodEnd);
   }
 
@@ -918,7 +962,179 @@ export class AccountTrader extends DurableObject<Env> {
     return this.summary();
   }
 
+
+  private async syncLiveHoldings(snapshot?: Summary["robinhood"]): Promise<void> {
+    const store = await this.store();
+    const settings = await store.getSettings();
+    if (!settings) return;
+    const holdings = await this.loadBrokerHoldings();
+    const orders = await this.loadBrokerOrders();
+    await this.applyPendingFills(orders);
+    const robinhood = snapshot === undefined ? await this.robinhoodSnapshot() : snapshot;
+    const equity = usdNumber(robinhood?.totalValue) || settings.cash;
+    const capital = effectiveTradingCapital(settings.tradingCapital, equity).capital;
+    const now = Date.now();
+    const open = await store.listPositions("live", "open");
+    const changes = reconcileLiveHoldings(open, holdings, {
+      now,
+      session: marketSession(new Date(now)),
+      tradingCapital: capital,
+      profitTargetPct: settings.profitTargetPct,
+      stopLossPct: settings.stopLossPct,
+      nextId: () => crypto.randomUUID(),
+    });
+    for (const change of changes) {
+      await store.upsertPosition(change.position);
+      if (change.trade) await store.insertTrade(change.trade);
+      if (change.capital) await store.insertCapitalHistory(change.capital);
+      if (change.review) await store.insertReview(change.review);
+      await this.audit(
+        change.kind === "import" ? "live_import" : change.kind === "close" ? "live_broker_close" : change.kind === "qty_change" ? "live_qty_change" : "live_avg_cost",
+        { symbol: change.position.symbol, qty: change.position.qty, source: change.position.source, avgCost: change.position.avgCost },
+      );
+    }
+  }
+
+  private recordedHoldings(): BrokerHolding[] {
+    return parsePositions(recordedHoldings).positions.map((position) => ({
+      symbol: position.symbol,
+      quantity: position.quantity,
+      averageBuyPrice: position.averageBuyPrice.status === "ok" ? position.averageBuyPrice.value : undefined,
+    }));
+  }
+
+  /** Prod never invents holdings from the recorded fixture. Dev and tests use it when Robinhood is not connected. */
+  private async loadBrokerHoldings(): Promise<BrokerHolding[]> {
+    const token = await this.accessToken().catch(() => undefined);
+    if (!token) return this.env.ENVIRONMENT === "prod" ? [] : this.recordedHoldings();
+    try {
+      const account = await this.agenticAccountNumber(token);
+      if (!account) return this.env.ENVIRONMENT === "prod" ? [] : this.recordedHoldings();
+      const args = { account_number: account };
+      assertOutgoing("get_equity_positions", args);
+      const parsed = parsePositions(await this.mcpCall(token, "get_equity_positions", args));
+      return parsed.positions.map((position) => ({
+        symbol: position.symbol,
+        quantity: position.quantity,
+        averageBuyPrice: position.averageBuyPrice.status === "ok" ? position.averageBuyPrice.value : undefined,
+      }));
+    } catch (error) {
+      await this.audit("holdings_failed", { message: error instanceof Error ? error.message : "holdings read failed" });
+      return [];
+    }
+  }
+
+  private async loadBrokerOrders(): Promise<OrderView[]> {
+    const token = await this.accessToken().catch(() => undefined);
+    if (!token) return [];
+    try {
+      const account = await this.agenticAccountNumber(token);
+      if (!account) return [];
+      const args = { account_number: account };
+      assertOutgoing("get_equity_orders", args);
+      return parseOrders(await this.mcpCall(token, "get_equity_orders", args));
+    } catch (error) {
+      await this.audit("orders_failed", { message: error instanceof Error ? error.message : "orders read failed" });
+      return [];
+    }
+  }
+
+  private async applyPendingFills(orders: OrderView[]): Promise<void> {
+    if (orders.length === 0) return;
+    const store = await this.store();
+    const open = await store.listPositions("live", "open");
+    const byId = new Map(orders.map((order) => [order.id, order]));
+    for (const position of open) {
+      const trades = await store.listTrades(position.id);
+      for (const trade of trades) {
+        if (!trade.brokerOrderId) continue;
+        const order = byId.get(trade.brokerOrderId);
+        if (!order) continue;
+        const next = applyOrderFill(trade, order);
+        if (!next) continue;
+        await store.insertTrade(next);
+        await this.audit("live_fill", { symbol: position.symbol, brokerOrderId: trade.brokerOrderId, status: next.status, fillPrice: next.fillPrice });
+      }
+    }
+  }
+
+  private async recordLivePlacement(input: {
+    payload: unknown;
+    fallbackId: string;
+    symbol: string;
+    quantity: number;
+    limitPrice: number;
+    session: string;
+    bid?: number;
+    ask?: number;
+    sizeReason: string;
+  }): Promise<void> {
+    const parsed = parsePlacedOrder(input.payload);
+    const brokerOrderId = parsed?.id ?? input.fallbackId;
+    const store = await this.store();
+    if (await store.getTradeByBrokerOrderId(brokerOrderId)) return;
+    const settings = await store.getSettings();
+    if (!settings) return;
+    const existing = (await store.listPositions("live", "open")).find((position) => position.symbol === input.symbol.toUpperCase());
+    const equity = usdNumber((await this.robinhoodSnapshot())?.totalValue) || settings.cash;
+    const capital = effectiveTradingCapital(settings.tradingCapital, equity).capital;
+    const proven = await store.currentRules();
+    const buy = proven.find((rule) => rule.side === "buy" && rule.status === "proven");
+    const sell = proven.find((rule) => rule.side === "sell" && rule.status === "proven");
+    const records = recordsForPlacedLiveBuy({
+      existing,
+      symbol: input.symbol,
+      qty: input.quantity,
+      limitPrice: input.limitPrice,
+      fillPrice: parsed?.averagePrice ?? parsed?.price,
+      brokerOrderId,
+      buyRuleVersionId: buy?.id,
+      sellRuleVersionId: sell?.id,
+      session: input.session,
+      bid: input.bid,
+      ask: input.ask,
+      tradingCapital: capital,
+      profitTargetPct: settings.profitTargetPct,
+      stopLossPct: settings.stopLossPct,
+      sizeReason: input.sizeReason,
+      status: parsed?.state ?? "submitted",
+      now: Date.now(),
+      nextId: () => crypto.randomUUID(),
+    });
+    await store.upsertPosition(records.position);
+    await store.insertTrade(records.trade);
+    if (records.capital) await store.insertCapitalHistory(records.capital);
+    await this.audit("live_order", { symbol: input.symbol, brokerOrderId, qty: input.quantity, status: records.trade.status });
+  }
+
+  private async recordLiveStop(symbol: string, payload: unknown, session: string): Promise<void> {
+    const parsed = parsePlacedOrder(payload);
+    if (!parsed?.id) return;
+    const store = await this.store();
+    if (await store.getTradeByBrokerOrderId(parsed.id)) return;
+    const position = (await store.listPositions("live", "open")).find((item) => item.symbol === symbol.toUpperCase());
+    if (!position) return;
+    await store.insertTrade({
+      id: crypto.randomUUID(),
+      positionId: position.id,
+      ruleVersionId: position.sellRuleVersionId,
+      side: "sell",
+      qty: parsed.quantity || position.qty,
+      limitPrice: parsed.price,
+      session,
+      capitalSnapshot: position.tradingCapitalSnapshot,
+      sizeReason: "Broker stop submitted with the live entry.",
+      exitReason: "stop",
+      brokerOrderId: parsed.id,
+      status: parsed.state || "submitted",
+      createdAt: Date.now(),
+      source: "app",
+    });
+    await this.audit("live_stop_order", { symbol, brokerOrderId: parsed.id, status: parsed.state });
+  }
+
   private async robinhoodSnapshot(): Promise<Summary["robinhood"]> {
+    if (this.snapshotCache && Date.now() - this.snapshotCache.at < 5000) return this.snapshotCache.value;
     let token: string | undefined;
     try {
       token = await this.accessToken();
@@ -926,22 +1142,22 @@ export class AccountTrader extends DurableObject<Env> {
       // A saved sign-in that cannot be decrypted (for example after a key change) must not break the summary.
       this.robinhoodError = "The saved Robinhood sign-in could not be read. Disconnect and connect again.";
       await this.audit("robinhood_token_unreadable", {});
-      return null;
+      return this.cacheSnapshot(null);
     }
-    if (!token) return null;
+    if (!token) return this.cacheSnapshot(null);
     try {
       assertOutgoing("get_accounts", {});
       const accountsPayload = await this.mcpCall(token, "get_accounts", {});
       const account = selectAgentic(parseAccounts(accountsPayload));
       if (!account) {
         this.robinhoodError = "Robinhood is connected, but no agent trading account was found.";
-        return null;
+        return this.cacheSnapshot(null);
       }
       assertOutgoing("get_portfolio", { account_number: account.accountNumber });
       const portfolio = parsePortfolio(await this.mcpCall(token, "get_portfolio", { account_number: account.accountNumber }));
       assertOutgoing("get_realized_pnl", { account_number: account.rhsAccountNumber, span: "day" });
       const pnl = parseRealizedPnl(await this.mcpCall(token, "get_realized_pnl", { account_number: account.rhsAccountNumber, span: "day" }));
-      return {
+      const snapshot = {
         maskedAccount: maskAccountNumber(account.accountNumber),
         nickname: displayField(account.nickname),
         brokerageType: account.brokerageAccountType || "Unavailable",
@@ -954,12 +1170,18 @@ export class AccountTrader extends DurableObject<Env> {
         todayPnl: displayField(pnl.totalReturns, "usd"),
         unsettled: displayField(account.unsettledFunds, "usd"),
       };
+      return this.cacheSnapshot(snapshot);
     } catch (error) {
       const message = error instanceof Error ? error.message : "read failed";
       this.robinhoodError = `Robinhood is connected, but reading the account failed: ${message.slice(0, 160)}`;
       await this.audit("robinhood_read_failed", { message });
-      return null;
+      return this.cacheSnapshot(null);
     }
+  }
+
+  private cacheSnapshot(value: Summary["robinhood"]): Summary["robinhood"] {
+    this.snapshotCache = { at: Date.now(), value };
+    return value;
   }
 
   private async audit(action: string, detail: unknown): Promise<void> {
@@ -987,4 +1209,10 @@ function parseMcp(contentType: string, body: string): unknown {
     return last;
   }
   return JSON.parse(body) as unknown;
+}
+
+function usdNumber(value: string | undefined): number {
+  if (!value) return 0;
+  const amount = Number(String(value).replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(amount) && amount > 0 ? amount : 0;
 }
