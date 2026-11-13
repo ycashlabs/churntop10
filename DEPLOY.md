@@ -33,7 +33,7 @@ curl -X POST "https://api.cloudflare.com/client/v4/accounts/f59b2545f5783d93b378
 # repeat with "churntop10-audit-prod"
 ```
 
-Apply the numbered files in `migrations/` in order (`0001_init.sql`, `0002_v2.sql`, `0003_v3.sql`) once per database before the first request. A database that already has v2 only needs `0003_v3.sql` plus the app’s data backfill (see [docs/storage.md](docs/storage.md)). Fresh apply:
+Apply the numbered files in `migrations/` in order (`0001_init.sql`, `0002_v2.sql`, `0003_v3.sql`, `0004_live_sync.sql`) once per database before the first request. A database that already has v3 only needs `0004_live_sync.sql`. A database that already has v2 only needs `0003_v3.sql` and `0004_live_sync.sql` plus the app’s data backfill (see [docs/storage.md](docs/storage.md)). Fresh apply:
 
 ```bash
 curl -X POST "https://api.cloudflare.com/client/v4/accounts/f59b2545f5783d93b378006f3eb10bb4/d1/database/$DATABASE_ID/query" \
@@ -177,3 +177,16 @@ Prod is on the v3 build from `main` `f53af3e`. The upload used the same method a
 
 Before that upload, a Time Travel bookmark was taken for prod D1, then `migrations/0002_v2.sql` and `migrations/0003_v3.sql` were applied with the D1 query API (one statement at a time, same split as dev) and recorded in `d1_migrations`. The application backfill is not a SQL file; `prepareStorage` runs `migrateV2Data` and `seedDraftRules` on the next cron tick or the first authenticated request. Current ids, the bookmark, and the exact bindings are in [docs/prod.md](docs/prod.md). Rollback is in [ROLLBACK.md](ROLLBACK.md).
 
+
+
+## Promoting live holdings sync to prod
+
+Do this only after an explicit go-ahead. Do not change `ALLOW_LIVE_TRADING`. Do not place or cancel Robinhood orders as part of the deploy.
+
+1. Take a D1 Time Travel bookmark on prod D1 `b2e4f00d-c7a2-41a6-a75f-12a3043ca20e`.
+2. Apply `migrations/0004_live_sync.sql` to that database with the D1 query API, one statement at a time, then `INSERT INTO d1_migrations (name) VALUES ('0004_live_sync.sql');`. Confirm `source` exists on `positions` and `trades`.
+3. Merge the pull request to `main`.
+4. Upload the embedded-UI Worker to `churntop10-prod` the same way as the v3 deploy: no `assets` binding, `keep_bindings: ["secret_text"]` so `TOKEN_KEY` is kept, `ALLOW_LIVE_TRADING` must be `"0"`, `ENVIRONMENT` must be `prod`.
+5. Verify bindings, Access still owner-only, cron `*/5 * * * *`, and that the script hash matches the uploaded bundle.
+
+After the first cron tick or Account Summary load, prod will import real Robinhood holdings (not the dev fixture) into Live positions.

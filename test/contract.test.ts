@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { decodeToolPayload, displayField, parseAccounts, parsePortfolio, parsePositions, parseQuotes, parseRealizedPnl, selectAgentic } from "../src/lib/decode.js";
+import { decodeToolPayload, displayField, parseAccounts, parseOrders, parsePlacedOrder, parsePortfolio, parsePositions, parseQuotes, parseRealizedPnl, selectAgentic } from "../src/lib/decode.js";
 import { maskAccountNumber, redactJson } from "../src/lib/mask.js";
 import { knownTools, validateOutgoing } from "../src/lib/requests.js";
 import { buildEntryBundle } from "../src/lib/orders.js";
@@ -97,6 +97,13 @@ describe("recorded payloads", () => {
     const open = parsePositions(fixture("get_equity_positions_open.json"));
     expect(open.positions[0]).toMatchObject({ symbol: "AAPL", quantity: 2 });
     expect(open.positions[0]?.averageBuyPrice.status).toBe("ok");
+    const recorded = parsePositions(fixture("get_equity_positions_tsll.json"));
+    expect(recorded.positions[0]).toMatchObject({ symbol: "TSLL", quantity: 1 });
+    expect(JSON.stringify(fixture("get_equity_positions_tsll.json"))).not.toMatch(/account_number|544784028/);
+    const placed = parsePlacedOrder(fixture("place_equity_order_submitted.json"));
+    expect(placed?.id).toBe("11111111-2222-4333-8444-555555555555");
+    const filled = parseOrders(fixture("get_equity_orders_filled.json"));
+    expect(filled[0]).toMatchObject({ id: placed?.id, state: "filled", averagePrice: 11.048 });
   });
 
   it("parses the recorded quote book and prefers the later extended print", () => {

@@ -28,6 +28,7 @@ function asPosition(row: Record<string, unknown>): PositionRecord {
     qty: Number(row.qty),
     openedAt: Number(row.opened_at),
     closedAt: row.closed_at == null ? undefined : Number(row.closed_at),
+    source: row.source === "imported" ? "imported" : "app",
   };
 }
 
@@ -49,6 +50,7 @@ function asTrade(row: Record<string, unknown>): TradeRecord {
     brokerOrderId: (row.broker_order_id as string | null) ?? undefined,
     status: String(row.status),
     createdAt: Number(row.created_at),
+    source: (row.source as TradeRecord["source"] | null) ?? "app",
   };
 }
 
@@ -140,8 +142,8 @@ export function createD1Storage(db: D1Database): Storage {
 
     async upsertPosition(position) {
       await mini.exec(
-        `INSERT INTO positions (id, mode, symbol, status, trading_capital_snapshot, profit_target_pct, stop_loss_pct, buy_rule_version_id, sell_rule_version_id, avg_cost, qty, opened_at, closed_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO positions (id, mode, symbol, status, trading_capital_snapshot, profit_target_pct, stop_loss_pct, buy_rule_version_id, sell_rule_version_id, avg_cost, qty, opened_at, closed_at, source)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
            status = excluded.status,
            trading_capital_snapshot = excluded.trading_capital_snapshot,
@@ -151,8 +153,9 @@ export function createD1Storage(db: D1Database): Storage {
            sell_rule_version_id = excluded.sell_rule_version_id,
            avg_cost = excluded.avg_cost,
            qty = excluded.qty,
-           closed_at = excluded.closed_at`,
-        [position.id, position.mode, position.symbol, position.status, position.tradingCapitalSnapshot, position.profitTargetPct, position.stopLossPct, position.buyRuleVersionId ?? null, position.sellRuleVersionId ?? null, position.avgCost, position.qty, position.openedAt, position.closedAt ?? null],
+           closed_at = excluded.closed_at,
+           source = excluded.source`,
+        [position.id, position.mode, position.symbol, position.status, position.tradingCapitalSnapshot, position.profitTargetPct, position.stopLossPct, position.buyRuleVersionId ?? null, position.sellRuleVersionId ?? null, position.avgCost, position.qty, position.openedAt, position.closedAt ?? null, position.source ?? "app"],
       );
     },
 
@@ -174,10 +177,10 @@ export function createD1Storage(db: D1Database): Storage {
 
     async insertTrade(trade) {
       await mini.exec(
-        `INSERT INTO trades (id, position_id, rule_version_id, side, qty, limit_price, fill_price, session, bid_at_order, ask_at_order, capital_snapshot, size_reason, exit_reason, broker_order_id, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT (id) DO UPDATE SET status = excluded.status, fill_price = excluded.fill_price, exit_reason = excluded.exit_reason`,
-        [trade.id, trade.positionId, trade.ruleVersionId ?? null, trade.side, trade.qty, trade.limitPrice ?? null, trade.fillPrice ?? null, trade.session, trade.bidAtOrder ?? null, trade.askAtOrder ?? null, trade.capitalSnapshot, trade.sizeReason, trade.exitReason ?? null, trade.brokerOrderId ?? null, trade.status, trade.createdAt],
+        `INSERT INTO trades (id, position_id, rule_version_id, side, qty, limit_price, fill_price, session, bid_at_order, ask_at_order, capital_snapshot, size_reason, exit_reason, broker_order_id, status, created_at, source)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET status = excluded.status, fill_price = excluded.fill_price, exit_reason = excluded.exit_reason, qty = excluded.qty, source = excluded.source`,
+        [trade.id, trade.positionId, trade.ruleVersionId ?? null, trade.side, trade.qty, trade.limitPrice ?? null, trade.fillPrice ?? null, trade.session, trade.bidAtOrder ?? null, trade.askAtOrder ?? null, trade.capitalSnapshot, trade.sizeReason, trade.exitReason ?? null, trade.brokerOrderId ?? null, trade.status, trade.createdAt, trade.source ?? "app"],
       );
       if (trade.signals) {
         for (const signal of trade.signals) {
@@ -187,6 +190,12 @@ export function createD1Storage(db: D1Database): Storage {
           );
         }
       }
+    },
+
+    async getTradeByBrokerOrderId(brokerOrderId) {
+      if (!brokerOrderId) return undefined;
+      const row = await mini.first<Record<string, unknown>>("SELECT * FROM trades WHERE broker_order_id = ? LIMIT 1", [brokerOrderId]);
+      return row ? asTrade(row) : undefined;
     },
 
     async insertPriceMark(mark) {

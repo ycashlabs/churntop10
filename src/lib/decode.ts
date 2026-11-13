@@ -341,3 +341,61 @@ export function displayField(field: Field<number | string | null>, kind: "usd" |
   }
   return String(field.value);
 }
+
+export interface OrderView {
+  id: string;
+  symbol: string;
+  side: "buy" | "sell";
+  state: string;
+  quantity: number;
+  price?: number;
+  averagePrice?: number;
+}
+
+function parseOrderRecord(item: Record<string, unknown>): OrderView | undefined {
+  const id = typeof item.id === "string" ? item.id : typeof item.order_id === "string" ? item.order_id : undefined;
+  if (!id) return undefined;
+  const symbol = typeof item.symbol === "string" ? item.symbol.toUpperCase() : "";
+  const side = item.side === "sell" ? "sell" : "buy";
+  const state = typeof item.state === "string" ? item.state : typeof item.status === "string" ? item.status : "unknown";
+  const quantity = parseAmountField(item.quantity, true);
+  if (quantity.status !== "ok" || quantity.value === undefined) return undefined;
+  const price = item.price === undefined ? undefined : parseAmountField(item.price, false);
+  const average = item.average_price === undefined ? undefined : parseAmountField(item.average_price, false);
+  return {
+    id,
+    symbol,
+    side,
+    state: state.toLowerCase(),
+    quantity: quantity.value,
+    price: price?.status === "ok" ? price.value : undefined,
+    averagePrice: average?.status === "ok" ? average.value : undefined,
+  };
+}
+
+/** Parse a place_equity_order response. The broker order id is `id` or `order_id`. */
+export function parsePlacedOrder(payload: unknown): OrderView | undefined {
+  const data = decodeToolPayload(payload);
+  const root = isRecord(data) ? data : {};
+  const item = isRecord(root.order) ? root.order : root;
+  return parseOrderRecord(item);
+}
+
+/** Parse a get_equity_orders list payload. */
+export function parseOrders(payload: unknown): OrderView[] {
+  const data = decodeToolPayload(payload);
+  const list = isRecord(data) && Array.isArray(data.orders)
+    ? data.orders
+    : isRecord(data) && Array.isArray(data.results)
+      ? data.results
+      : Array.isArray(data)
+        ? data
+        : [];
+  const orders: OrderView[] = [];
+  for (const item of list) {
+    if (!isRecord(item)) continue;
+    const parsed = parseOrderRecord(item);
+    if (parsed) orders.push(parsed);
+  }
+  return orders;
+}

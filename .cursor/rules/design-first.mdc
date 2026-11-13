@@ -1,0 +1,18 @@
+---
+description: Require DESIGN.md to be read and updated; hard safety rules for this trading app.
+alwaysApply: true
+---
+
+# Design first
+
+Before any work in this repository, read `docs/DESIGN.md` in full. Follow it. Update it in the same PR as any change to behavior, schema, UI copy, APIs, settings, or wrangler config. CI (`scripts/check-design.mjs`) fails the PR if `src/`, `migrations/`, or wrangler config change and `docs/DESIGN.md` does not.
+
+Hard safety rules:
+
+- Do not place, cancel, or modify a real Robinhood order without the owner's explicit confirmation of that specific order.
+- Leave `ALLOW_LIVE_TRADING` at `"0"` unless the owner clearly says to turn it on.
+- Keep dev and prod separate (Workers, D1, R2, Access, tokens). Dev should not hold a live Robinhood token.
+- Do not deploy to prod or change prod without the owner's explicit go-ahead.
+- Mask account numbers to the last four characters everywhere.
+
+The same rules are in `AGENTS.md`.

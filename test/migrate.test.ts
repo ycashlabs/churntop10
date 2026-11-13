@@ -32,11 +32,12 @@ function sqliteMini(db: DatabaseSync): MiniDb {
 }
 
 describe("migrations", () => {
-  it("applies a fresh 0001–0003 database and backfills the signal catalog", async () => {
+  it("applies a fresh 0001–0004 database and backfills the signal catalog", async () => {
     const db = new DatabaseSync(":memory:");
     applyFile(db, "0001_init.sql");
     applyFile(db, "0002_v2.sql");
     applyFile(db, "0003_v3.sql");
+    applyFile(db, "0004_live_sync.sql");
     const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as Array<{ name: string }>;
     const names = tables.map((row) => row.name);
     expect(names).toEqual(expect.arrayContaining([
@@ -51,6 +52,10 @@ describe("migrations", () => {
     expect(signals.n).toBeGreaterThanOrEqual(8);
     const cols = db.prepare("PRAGMA table_info(app_settings)").all() as Array<{ name: string }>;
     expect(cols.map((col) => col.name)).toContain("trading_capital");
+    const positionCols = db.prepare("PRAGMA table_info(positions)").all() as Array<{ name: string }>;
+    expect(positionCols.map((col) => col.name)).toContain("source");
+    const tradeCols = db.prepare("PRAGMA table_info(trades)").all() as Array<{ name: string }>;
+    expect(tradeCols.map((col) => col.name)).toContain("source");
   });
 
   it("upgrades a v2 database, moving rules, open positions, and closed trades", async () => {
@@ -67,6 +72,7 @@ describe("migrations", () => {
     db.prepare(`INSERT INTO sim_trades (id, symbol, quantity, entry_price, exit_price, pnl, opened_on, closed_at, buy_rule_id, buy_rule_version, sell_rule_id, sell_rule_version, signals, reason)
       VALUES ('tr-1', 'MSFT', 1, 521, 530, 9, '2026-11-12', ?, 'ver-1', 1, NULL, NULL, '[]', 'target')`).run(now);
     applyFile(db, "0003_v3.sql");
+    applyFile(db, "0004_live_sync.sql");
     const result = await migrateV2Data(sqliteMini(db), now);
     expect(result.rules).toBe(1);
     expect(result.positions).toBeGreaterThanOrEqual(2);

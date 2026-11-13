@@ -12,7 +12,8 @@
     "test": "vitest run",
     "check:html": "node scripts/check-html.mjs",
     "check:bundle": "node scripts/check-bundle.mjs",
-    "cf-typegen": "wrangler types"
+    "cf-typegen": "wrangler types",
+    "check:design": "node scripts/check-design.mjs"
   },
   "dependencies": {
     "@simplewebauthn/browser": "13.1.2",

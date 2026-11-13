@@ -3,6 +3,8 @@ import type { SignalResult } from "./signals.js";
 
 export type PositionMode = "live" | "sim";
 export type PositionStatus = "open" | "closed";
+export type PositionSource = "app" | "imported";
+export type TradeSource = "app" | "broker_import" | "broker_qty_change" | "broker_close";
 export type SignalStatus = "candidate" | "active" | "retired";
 
 export interface PositionRecord {
@@ -19,6 +21,7 @@ export interface PositionRecord {
   qty: number;
   openedAt: number;
   closedAt?: number;
+  source?: PositionSource;
 }
 
 export interface TradeRecord {
@@ -39,6 +42,7 @@ export interface TradeRecord {
   status: string;
   createdAt: number;
   signals?: SignalResult[];
+  source?: TradeSource;
 }
 
 export interface PriceMark {
@@ -160,6 +164,7 @@ export interface Storage {
   upsertPosition(position: PositionRecord): Promise<void>;
   listTrades(positionId: string): Promise<TradeRecord[]>;
   insertTrade(trade: TradeRecord): Promise<void>;
+  getTradeByBrokerOrderId(brokerOrderId: string): Promise<TradeRecord | undefined>;
 
   insertPriceMark(mark: PriceMark): Promise<void>;
   listPriceMarks(positionId: string): Promise<PriceMark[]>;

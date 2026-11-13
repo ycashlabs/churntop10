@@ -155,7 +155,7 @@ Live real-money trading stays off until the user explicitly approves. Until then
 Six screens. The original five remain, with the additions below, plus **Review**.
 
 - **Account Summary** and **Simulator** show that mode’s positions together with their trades (one position to many trades), the position’s Trading capital snapshot, and that position’s profit target and stop-loss. Each open position has an **Edit capital** action.
-- **Review** — closed positions and their reviews, the best and worst signals, and rule scorecards, with filters for rule, symbol, session, date, and mode (live or sim).
+- **Review** — closed positions and their reviews, imported live holdings (marked imported/manual), the best and worst signals, and rule scorecards, with filters for rule, symbol, session, date, and mode (live or sim).
 - **Settings** — adds **Trading capital**. Daily loss stop is a percent of Trading capital and, like the profit target, accepts any positive percent up to 100%.
 
 ### Trading capital (very important)
@@ -184,8 +184,8 @@ The trading record is a portable relational schema, written so it can move to Po
 
 Tables:
 
-- **positions** — `mode` (live or sim), symbol, status, `trading_capital_snapshot`, `profit_target_pct`, `stop_loss_pct`, buy and sell `rule_version` ids, average cost, quantity, `opened_at`, `closed_at`. Re-buying a sold-out symbol opens a **new** position.
-- **trades** — `position_id` (FK), `rule_version_id`, side, quantity, limit and fill price, session, bid and ask at order, `capital_snapshot`, `size_reason`, `exit_reason`, `broker_order_id`, status, `created_at`.
+- **positions** — `mode` (live or sim), symbol, status, `trading_capital_snapshot`, `profit_target_pct`, `stop_loss_pct`, buy and sell `rule_version` ids, average cost, quantity, `opened_at`, `closed_at`, `source` (`app` or `imported`). Re-buying a sold-out symbol opens a **new** position.
+- **trades** — `position_id` (FK), `rule_version_id`, side, quantity, limit and fill price, session, bid and ask at order, `capital_snapshot`, `size_reason`, `exit_reason`, `broker_order_id`, status, `created_at`, `source` (`app`, `broker_import`, `broker_qty_change`, or `broker_close`).
 - **trade_signals** — `trade_id`, `signal_id`, value, passed.
 - **signals** — name, description, status (`candidate`, `active`, `retired`), `added_at`.
 - **rules**, **rule_versions**, **rule_signals** (parameters as JSON).
@@ -206,4 +206,21 @@ All database access goes through **one repository/storage interface**. The curre
 
 ### Analysis
 
-When a position closes, the app writes a `position_review`, including an automatic `bot_note`. The owner can edit `user_note`. Each cycle records a `price_mark` for every open position. Rule and signal score snapshots are computed daily. The Review screen lists closed positions, highlights best and worst signals, shows rule scorecards, and filters by rule, symbol, session, date, and mode.
+When a position closes, the app writes a `position_review`, including an automatic `bot_note`. The owner can edit `user_note`. Each cycle records a `price_mark` for every open position. Rule and signal score snapshots are computed daily. The Review screen lists closed positions and imported live holdings, highlights best and worst signals, shows rule scorecards, and filters by rule, symbol, session, date, and mode.
+
+
+### Live holdings sync and live order records
+
+Each cron tick, and when Account Summary or Review loads, the app reads `get_equity_positions` (read-only) and reconciles those holdings into D1 `positions` with `mode = live`.
+
+- A Robinhood holding with no open live app record becomes an **imported** live position: average cost and quantity come from Robinhood; the Trading capital snapshot is the current Trading capital (the lower of the Settings amount and real equity) at import time; there is no buy rule version (the UI marks it **imported/manual**); the import is logged in the audit log and `position_capital_history`; a `trades` row is written with `source = broker_import`.
+- Quantity changes made outside the app become additional trade rows (`source = broker_qty_change`). A full sell-out closes the position (`source = broker_close`) and writes a review note that the close was not placed by this app. Re-buying the same symbol later opens a new position.
+- The reconcile is **idempotent**: running it again against the same holdings writes nothing.
+- Imported positions get **no automatic sell-rule or stop actions** unless the owner later assigns a sell rule. With `ALLOW_LIVE_TRADING=0`, nothing acts anyway.
+- Prod never invents holdings from the recorded fixture. Dev (and tests) use the recorded `get_equity_positions` payload in `docs/contracts/robinhood/fixtures/get_equity_positions_tsll.json` when Robinhood is not connected. Account numbers are masked or omitted from recorded payloads.
+
+Every order the app itself places on the gated live path writes `positions` / `trades` rows (rule versions, signals, capital snapshot, `broker_order_id`) the same way the simulator path does. Later fills are reconciled by broker order id from `get_equity_orders`. Retrying the same broker order id does not create a second trade.
+
+### Simulator auto-start
+
+Cron (`tickSimulator`) always runs a simulator cycle, even when there are no open sim positions, so the simulator can open a starter on live or recorded quotes. New buys still respect Sell All Positions, the Friday 8:00 PM–Sunday 8:00 PM ET closed session, and quote-quality checks. Daily score snapshots are skipped when nothing is closed to score.

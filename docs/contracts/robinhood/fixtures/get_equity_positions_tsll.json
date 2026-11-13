@@ -1,0 +1,20 @@
+{
+  "data": {
+    "positions": [
+      {
+        "symbol": "TSLL",
+        "quantity": "1.000000",
+        "intraday_quantity": "1.000000",
+        "average_buy_price": "11.050000",
+        "shares_available_for_sells": "1.000000",
+        "shares_held_for_sells": "0.000000",
+        "shares_held_for_stock_grants": "0.000000",
+        "shares_held_for_options_events": "0.000000",
+        "shares_held_for_asset_transfer": "0.000000",
+        "shares_pending_from_options_events": "0.000000",
+        "type": "long"
+      }
+    ]
+  },
+  "guide": "Recorded get_equity_positions shape from a live account. Sellable shares: use shares_available_for_sells, not quantity. average_buy_price is the average cost per share shown in the Robinhood app. Account numbers are not present in this payload and must stay masked if they appear in later recordings."
+}
