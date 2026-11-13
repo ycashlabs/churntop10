@@ -11,6 +11,7 @@ import { submitGatedTool } from "../lib/broker.js";
 import { assertOutgoing } from "../lib/requests.js";
 import { applyOrderFill, labelBuyRule, recordsForPlacedLiveBuy, reconcileLiveHoldings, shouldComputeScores, type BrokerHolding } from "../lib/holdings.js";
 import { equityOf, ordersToday, runSimulatorCycle, sellAllSimPositions, type SimEvent, type SimState } from "../lib/simulator.js";
+import { computeSignals, type SignalResult } from "../lib/signals.js";
 import { dailyLossAmount, validExitPct, validateNewBuy, type GuardContext } from "../lib/validator.js";
 import type { RuleSide, RuleStatus } from "../lib/rules.js";
 import type { SimulatorView, RuleView, RuleHistoryView, PositionView, ReviewScreen } from "../lib/api-types.js";
@@ -203,6 +204,7 @@ export class AccountTrader extends DurableObject<Env> {
   private async seed(): Promise<void> {
     await this.ensureV2();
     await this.ensureLiveSync();
+    await this.ensureTradeSignalsSchema();
     const existing = await this.env.DB.prepare("SELECT id FROM app_settings WHERE id = 1").first();
     if (!existing) {
       const today = etParts(new Date()).date;
@@ -214,6 +216,14 @@ export class AccountTrader extends DurableObject<Env> {
     await (await this.store()).seedDraftRules();
   }
 
+
+
+  private async ensureTradeSignalsSchema(): Promise<void> {
+    const cols = (await this.env.DB.prepare("PRAGMA table_info(trade_signals)").all<{ name: string }>()).results.map((row) => row.name);
+    if (cols.length > 0 && !cols.includes("threshold")) {
+      await this.env.DB.prepare("ALTER TABLE trade_signals ADD COLUMN threshold REAL").run();
+    }
+  }
 
   private async ensureLiveSync(): Promise<void> {
     const addSource = async (table: string) => {
@@ -531,6 +541,26 @@ export class AccountTrader extends DurableObject<Env> {
     await store.setSelectedRuleIds(state.selectedRuleIds);
   }
 
+
+  private async computeLiveSignals(symbol: string, quote: QuoteView | undefined, now: Date, ruleSignals: string[] | undefined, allQuotes: QuoteView[]): Promise<SignalResult[]> {
+    if (!quote || !ruleSignals?.length) return [];
+    const rows = await (await this.store()).listBars();
+    const bars: Record<string, { ts: number; price: number; volume: number }[]> = {};
+    for (const row of rows) {
+      (bars[row.symbol] ??= []).push({ ts: row.ts, price: row.price, volume: row.volume });
+    }
+    const spy = allQuotes.find((item) => item.symbol === "SPY");
+    return computeSignals(ruleSignals, {
+      symbol,
+      last: quote.last,
+      volume: bars[symbol]?.at(-1)?.volume ?? 0,
+      now,
+      bars: bars[symbol] ?? [],
+      spyBars: bars.SPY ?? [],
+      spyLast: spy?.last,
+    });
+  }
+
   /** Live submits stay off unless the gate is armed. Off-hours, never send a broker stop. */
   private async proposeLiveEntries(quotes: QuoteView[], now: Date): Promise<void> {
     if (this.env.ALLOW_LIVE_TRADING !== "1") return;
@@ -587,6 +617,8 @@ export class AccountTrader extends DurableObject<Env> {
       try {
         await submitGatedTool({ allowLive: this.env.ALLOW_LIVE_TRADING, tool: "review_equity_order", args: review, send: (tool, args) => this.mcpCall(token, tool, args) });
         const placed = await submitGatedTool({ allowLive: this.env.ALLOW_LIVE_TRADING, tool: "place_equity_order", args: bundle.entry, send: (tool, args) => this.mcpCall(token, tool, args) });
+        const provenBuy = rules.find((rule) => rule.side === "buy" && rule.status === "proven");
+        const liveSignals = await this.computeLiveSignals(symbol, quote, now, provenBuy?.signals, quotes);
         await this.recordLivePlacement({
           payload: placed,
           fallbackId: typeof bundle.entry.ref_id === "string" ? bundle.entry.ref_id : refId,
@@ -597,6 +629,7 @@ export class AccountTrader extends DurableObject<Env> {
           bid: quote?.bid,
           ask: quote?.ask,
           sizeReason: verdict.sizeReason ?? "Live starter buy.",
+          signals: liveSignals,
         });
         try {
           const stopPlaced = await submitGatedTool({ allowLive: this.env.ALLOW_LIVE_TRADING, tool: "place_equity_order", args: bundle.stop, send: (tool, args) => this.mcpCall(token, tool, args) });
@@ -1068,6 +1101,7 @@ export class AccountTrader extends DurableObject<Env> {
     bid?: number;
     ask?: number;
     sizeReason: string;
+    signals?: SignalResult[];
   }): Promise<void> {
     const parsed = parsePlacedOrder(input.payload);
     const brokerOrderId = parsed?.id ?? input.fallbackId;
@@ -1097,6 +1131,7 @@ export class AccountTrader extends DurableObject<Env> {
       profitTargetPct: settings.profitTargetPct,
       stopLossPct: settings.stopLossPct,
       sizeReason: input.sizeReason,
+      signals: input.signals,
       status: parsed?.state ?? "submitted",
       now: Date.now(),
       nextId: () => crypto.randomUUID(),

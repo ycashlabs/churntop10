@@ -10,7 +10,7 @@ import type {
   Storage,
   TradeRecord,
 } from "../../lib/storage.js";
-import { d1Mini } from "./minidb.js";
+import { d1Mini, type MiniDb } from "./minidb.js";
 import { migrateV2Data, seedSignals as seedSignalRows } from "./migrate.js";
 
 function asPosition(row: Record<string, unknown>): PositionRecord {
@@ -76,8 +76,7 @@ function asRule(row: {
   };
 }
 
-export function createD1Storage(db: D1Database): Storage {
-  const mini = d1Mini(db);
+export function createMiniStorage(mini: MiniDb): Storage {
 
   async function loadSignals(versionId: string): Promise<string[]> {
     const rows = await mini.all<{ signal_id: string }>("SELECT signal_id FROM rule_signals WHERE rule_version_id = ?", [versionId]);
@@ -163,12 +162,13 @@ export function createD1Storage(db: D1Database): Storage {
       const rows = await mini.all<Record<string, unknown>>("SELECT * FROM trades WHERE position_id = ? ORDER BY created_at", [positionId]);
       const trades = rows.map(asTrade);
       for (const trade of trades) {
-        const signals = await mini.all<{ signal_id: string; value: number | null; passed: number }>("SELECT signal_id, value, passed FROM trade_signals WHERE trade_id = ?", [trade.id]);
+        const signals = await mini.all<{ signal_id: string; value: number | null; passed: number; threshold: number | null }>("SELECT signal_id, value, passed, threshold FROM trade_signals WHERE trade_id = ?", [trade.id]);
         trade.signals = signals.map((item) => ({
           id: item.signal_id,
           name: item.signal_id,
           fired: item.passed === 1,
           value: item.value,
+          threshold: item.threshold,
           reason: "",
         }));
       }
@@ -185,8 +185,8 @@ export function createD1Storage(db: D1Database): Storage {
       if (trade.signals) {
         for (const signal of trade.signals) {
           await mini.exec(
-            "INSERT INTO trade_signals (trade_id, signal_id, value, passed) VALUES (?, ?, ?, ?) ON CONFLICT (trade_id, signal_id) DO UPDATE SET value = excluded.value, passed = excluded.passed",
-            [trade.id, signal.id, signal.value, signal.fired ? 1 : 0],
+            "INSERT INTO trade_signals (trade_id, signal_id, value, passed, threshold) VALUES (?, ?, ?, ?, ?) ON CONFLICT (trade_id, signal_id) DO UPDATE SET value = excluded.value, passed = excluded.passed, threshold = excluded.threshold",
+            [trade.id, signal.id, signal.value, signal.fired ? 1 : 0, signal.threshold ?? null],
           );
         }
       }
@@ -506,6 +506,10 @@ export function createD1Storage(db: D1Database): Storage {
   };
 
   return store;
+}
+
+export function createD1Storage(db: D1Database): Storage {
+  return createMiniStorage(d1Mini(db));
 }
 
 export async function prepareStorage(db: D1Database): Promise<Storage> {
