@@ -170,3 +170,10 @@ npm run dev
 ```
 
 `npm run dev` builds the client, applies `migrations/0001_init.sql` to the local D1 database, and starts `wrangler dev` on port 8787 using the top-level config. That config keeps `ACCESS_ENFORCE` at `0` and leaves the Access team and audience empty, so a passkey works on `http://localhost:8787`. The top-level `database_id` matches dev so the name is real. The local command still uses local sqlite. It still uses the simulator and the recorded quote book. `env.dev` is the deployed Worker, not this local process.
+
+## Prod v3 upload (reproducible)
+
+Prod is on the v3 build from `main` `f53af3e`. The upload used the same method as the verified dev v3 deploy: `npm run build`, then a Workers script `PUT` with the UI embedded in `dist/index.js` and **no** `assets` binding. `keep_bindings` includes `secret_text` so `TOKEN_KEY` is not dropped. `ALLOW_LIVE_TRADING` stays `"0"`. Durable Object tag `v1` is not sent again.
+
+Before that upload, a Time Travel bookmark was taken for prod D1, then `migrations/0002_v2.sql` and `migrations/0003_v3.sql` were applied with the D1 query API (one statement at a time, same split as dev) and recorded in `d1_migrations`. The application backfill is not a SQL file; `prepareStorage` runs `migrateV2Data` and `seedDraftRules` on the next cron tick or the first authenticated request. Current ids, the bookmark, and the exact bindings are in [docs/prod.md](docs/prod.md). Rollback is in [ROLLBACK.md](ROLLBACK.md).
+
