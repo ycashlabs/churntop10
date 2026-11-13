@@ -73,6 +73,7 @@ export function App() {
           <div className={summary.mode === "live" ? "stamp" : "stamp"}>{summary.killed ? "Killed" : summary.mode === "live" ? "Live" : "View only"}</div>
           <div>{summary.clock}</div>
           <div>{summary.session}</div>
+          <button className="quiet" type="button" onClick={() => run(async () => { await post("/api/auth/logout"); setSummary(null); })}>Sign out</button>
         </div>
       </header>
       {summary.mode !== "live" && <p className="banner">View Only. Checks are saved and nothing is sent.</p>}
@@ -124,7 +125,9 @@ function SummaryPage({ summary }: { summary: Summary }) {
     <div className="grid">
       <section className="card">
         <h2>Robinhood</h2>
-        {!summary.connected || !rh ? <p>Not connected. Quotes on the Top 10 are the recorded book from 13 Nov 2026 until you connect.</p> : (
+        {summary.robinhoodStatus === "error" && <p className="error">{summary.robinhoodError ?? "Robinhood could not be read."} Reconnect from <a href="/settings">Settings</a>.</p>}
+        {summary.robinhoodStatus === "not_connected" && <p>Not connected. Connect from <a href="/settings">Settings</a>. Until then, Top 10 quotes come from the recorded book from 13 Nov 2026.</p>}
+        {!summary.connected || !rh ? null : (
           <dl>
             <dt>Account</dt><dd>{rh.maskedAccount}</dd>
             <dt>Name</dt><dd>{rh.nickname}</dd>
@@ -267,8 +270,19 @@ function SettingsPage({ summary, onRun }: { summary: Summary; onRun: (action: ()
         )}
         <button className="danger" type="button" onClick={() => onRun(() => post("/api/kill"))}>Kill switch</button>
         {summary.killed && <button className="quiet" type="button" onClick={() => onRun(() => post("/api/resume"))}>Clear kill switch</button>}
-        <button className="quiet" type="button" onClick={() => {
+
+      </div>
+
+      <h3>Robinhood</h3>
+      <p className="rh-status">
+        {summary.robinhoodStatus === "connected" && <>Connected to {summary.robinhood?.maskedAccount ?? "your account"}.</>}
+        {summary.robinhoodStatus === "not_connected" && <>Not connected.</>}
+        {summary.robinhoodStatus === "error" && <span className="error">{summary.robinhoodError ?? "Robinhood could not be read."}</span>}
+      </p>
+      <div className="row">
+        <button type="button" onClick={() => {
           setShowPaste(true);
+          setPasted("");
           onRun(async () => {
             const body = await post("/api/robinhood/connect") as Summary & { url?: string };
             if (body.url) {
@@ -278,8 +292,15 @@ function SettingsPage({ summary, onRun }: { summary: Summary; onRun: (action: ()
             await loadPending();
             return undefined;
           });
-        }}>Connect Robinhood</button>
+        }}>{summary.robinhoodStatus === "not_connected" ? "Connect Robinhood" : "Reconnect Robinhood"}</button>
         {!showPaste && !pending && !connectUrl && <button className="quiet" type="button" onClick={() => setShowPaste(true)}>Paste Robinhood address</button>}
+        {summary.robinhoodStatus !== "not_connected" && (
+          <button className="quiet" type="button" onClick={() => onRun(async () => {
+            if (!window.confirm("Disconnect Robinhood? The app forgets its saved sign-in. Robinhood orders are not touched.")) return undefined;
+            clearConnect();
+            return post("/api/robinhood/disconnect");
+          })}>Disconnect Robinhood</button>
+        )}
       </div>
       {(showPaste || pending || connectUrl) && (
         <div className="card" id="robinhood-paste">
@@ -298,6 +319,9 @@ function SettingsPage({ summary, onRun }: { summary: Summary; onRun: (action: ()
               try {
                 await post("/api/robinhood/complete", { callbackUrl: pasted });
                 clearConnect();
+              } catch (err) {
+                setShowPaste(true);
+                throw err;
               } finally {
                 await loadPending();
               }
@@ -306,7 +330,7 @@ function SettingsPage({ summary, onRun }: { summary: Summary; onRun: (action: ()
           </div>
         </div>
       )}
-      <p>Saving caps, editing the Top 10, switching to Live, and connecting Robinhood each ask for the passkey again. The kill switch does not.</p>
+      <p>Saving caps, editing the Top 10, switching to Live, and connecting or disconnecting Robinhood each ask for the passkey again. The kill switch does not.</p>
     </section>
   );
 }
