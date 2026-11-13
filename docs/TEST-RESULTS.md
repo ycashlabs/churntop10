@@ -12,7 +12,7 @@ Summary: **53 PASS**, **1 FAIL**, **9 NOT BUILT** (63 tests).
 | S-04 | Schema | v3 relationships: rules, versions, signals, positions, trades | PASS |  |
 | S-05 | Schema | app_settings seed columns include legacy pdt_limit and max_order_pct | PASS |  |
 | S-06 | Schema | trade_signals persists trade_id, signal_id, value, threshold, fired, name, and reason | PASS |  |
-| S-07 | Schema | trade_signals has name and reason (0006) on this branch / dev | PASS |  |
+| S-07 | Schema | trade_signals has name and reason (0006) on this branch / dev | PASS | 0006 exists in the repo. Applied and recorded on dev D1 at 8:39:59 AM CST (America/Chicago); PRAGMA shows name and reason. Not applied on prod. |
 | ST-01 | Settings | Defaults: profit/stop/daily loss 1%, order cap 100, capital 10000, view_only, not killed | PASS |  |
 | ST-02 | Settings | Percents: finite, > 0, ≤ 100; exact server messages from DESIGN §4 | PASS |  |
 | ST-03 | Settings | Order cap 1–1000; trading capital > 0, ≤ 1e9; exact messages | PASS |  |

@@ -6,7 +6,7 @@ Nothing in this note is a secret value. Never paste `TOKEN_KEY`, OAuth tokens, o
 
 Read [DESIGN.md](DESIGN.md) in full first, then this file. Safety rules are in [../AGENTS.md](../AGENTS.md).
 
-Last updated: 13 November 2026, 8:36 AM CST, America/Chicago.
+Last updated: 13 November 2026, 8:41 AM CST, America/Chicago.
 
 ## Owner and approval
 
@@ -83,11 +83,11 @@ Redirect is loopback `http://127.0.0.1:47621/callback` only. Do this on **prod**
 
 ### Dev
 
-- Worker `churntop10-dev` version **`4798f5d0-8006-4eb9-a84f-6610c33c4968`**, uploaded **8:13:26 AM CST** (America/Chicago). Etag `fc98d05143b06d67b4e9d13088ae2eeb8a0476e1b5df30d8f3a555879cb0c055`. Script SHA-256 `496fbad92fdf9a5f8ec78b7348f882638e1cd0513e941b330a80f0bdf821fca9`. Embedded UI, no `assets`, `TOKEN_KEY` kept, gate `"0"`, `ENVIRONMENT=dev`, `ACCESS_ENFORCE=1`. Cron `*/5 * * * *`. Previous version (rollback): `20320715-4871-4cf7-8934-5ddf192867f6`.
-- D1 `churntop10-dev` now has `0001`–**`0005_trade_signals_threshold.sql`** (recorded 8:12:02 AM CST / 14:12:02 UTC). Pre-`0005` Time Travel bookmark: `000000a8-00000000-00005122-26fed85f6a2eb2ec034474f8838928a3`. PRAGMA shows `trade_signals.threshold`.
+- Worker `churntop10-dev` version **`08c1011c-3a90-4ab4-8087-e987ff4aeefa`**, uploaded **8:40:47 AM CST** (America/Chicago). Etag `9c911caba17bf280c254e7d737874fc5c50a4157dee98da59e0ad6138682de92`. Script SHA-256 `6dd41fea3abd35465523b2afe998cd7961b06a0376e06adbcb0459a0270b6595`. Embedded UI, no `assets`, `TOKEN_KEY` kept, gate `"0"`, `ENVIRONMENT=dev`, `ACCESS_ENFORCE=1`. Cron `*/5 * * * *`. Previous version (rollback): `4798f5d0-8006-4eb9-a84f-6610c33c4968`. This is the PR #10 Worker (signal name/reason, live fire guard, trades-table wording).
+- D1 `churntop10-dev` now has `0001`–**`0006_trade_signals_name_reason.sql`**. `0005` recorded 8:12:02 AM CST / 14:12:02 UTC; **`0006` recorded 8:39:59 AM CST / 14:39:59 UTC**. Pre-`0006` Time Travel bookmark: `000000ae-00000000-00005122-254240f2ae5bdf4d41da1bcdc73d2c12`. Pre-`0005` bookmark: `000000a8-00000000-00005122-26fed85f6a2eb2ec034474f8838928a3`. PRAGMA shows `trade_signals` columns `trade_id, signal_id, value, passed, threshold, name, reason`.
 - No Robinhood token. Holdings sync uses the recorded TSLL fixture (prod must never use that fixture).
-- Conformance: [TEST-RESULTS.md](TEST-RESULTS.md). Local wrangler sim starter persisted three `trade_signals` rows with thresholds. Prod NVDA backfill is still pending go-ahead.
-- Branch `cursor/signal-views-and-live-guards` (dev only): migration **`0006_trade_signals_name_reason.sql`** (`name`, `reason` on `trade_signals`), live first-buy signals must fire before place, and the trades table shows stored signals with the DESIGN §6 wording. Apply `0006` and deploy that Worker on **dev only**. Do not apply `0006` or that Worker on prod without a later explicit go-ahead.
+- Conformance: [TEST-RESULTS.md](TEST-RESULTS.md). Local wrangler walk: 10 position trades carried signals and the Simulator table showed the DESIGN Fired / Not fired wording. Prod NVDA backfill is still pending a second OK. **Do not apply `0006` or this Worker on prod without explicit go-ahead.**
+- Open PR: [#10](https://github.com/ycashlabs/churntop10/pull/10) (`cursor/signal-views-and-live-guards`).
 
 ### Open work / pending owner decisions
 
