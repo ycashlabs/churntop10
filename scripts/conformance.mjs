@@ -60,8 +60,7 @@ const RULES_HELP = "You edit the text; the app proofreads by saving a history en
 const navOrder = ["Account Summary", "Top 10", "Rules", "Simulator", "Review", "Settings"];
 
 function navOrderOk() {
-  const matches = [...app.matchAll(/go\("([^"]+)"\)[;}].*?>(Account Summary|Top 10|Rules|Simulator|Review|Settings)</g)];
-  // fallback: extract visible nav labels in order
+  // Extract visible nav labels in order.
   const block = app.slice(app.indexOf("<nav>"), app.indexOf("</nav>"));
   const labels = [...block.matchAll(/>(Account Summary|Top 10|Rules|Simulator|Review|Settings)</g)].map((m) => m[1]);
   return JSON.stringify(labels) === JSON.stringify(navOrder) ? "" : `nav labels ${JSON.stringify(labels)}`;
@@ -190,8 +189,7 @@ const catalog = [
     } },
   { id: "U-04", area: "UI", description: "Top 10 help and table headers Symbol / Bid / Ask / Last",
     check() {
-      const i = app.indexOf('page === "top10"') >= 0 ? app.indexOf("function Top10") : app.indexOf("Top 10");
-      // Just require the header cells exist near a top10 section
+      // Require the header cells exist.
       const need = [">Symbol<", ">Bid<", ">Ask<", ">Last<"];
       const missing = need.filter((n) => !app.includes(n));
       return fromSource(missing.length === 0, `missing ${missing}`);
@@ -312,7 +310,6 @@ const catalog = [
   { id: "R-06", area: "Rules", description: "Rule statuses are Experimenting, Proven, Retired; stamp shows the raw lowercase string",
     check() {
       const type = rules.includes('"experimenting"') && rules.includes('"proven"') && rules.includes('"retired"');
-      const stamp = app.includes("rule.status") && !app.includes("Experimenting") || app.includes("{rule.status}");
       return fromSource(type && app.includes("{rule.status}"), `type=${type} raw stamp missing`);
     } },
   { id: "T-01", area: "Sizing / sessions / safety", description: "10% cap, 20% starter (2% of snapshot), signal-sized adds, whole shares off regular hours",
@@ -412,7 +409,6 @@ const catalog = [
     } },
   { id: "A-03", area: "Review / Access / security", description: "submitGatedTool throws unless gate is 1; cancel/modify always refused",
     check() {
-      const hay = sh("rg -l 'submitGatedTool' src || true");
       const files = sh("rg -l submitGatedTool src || true").split("\n").filter(Boolean);
       const text = files.map(read).join("\n");
       const gate = text.includes('ALLOW_LIVE_TRADING') && (text.includes('!== "1"') || text.includes("!== '1'"));

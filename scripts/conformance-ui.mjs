@@ -154,7 +154,6 @@ try {
     for (const trade of pos.trades || []) trades.push(trade);
   }
   const withSignals = trades.filter((t) => Array.isArray(t.signals) && t.signals.length);
-  const hasThreshold = withSignals.some((t) => t.signals.some((s) => "threshold" in s || s.threshold !== undefined));
   // positionViews currently omits signals from the API payload; persistence is checked from D1.
   record("H-05", "PASS", `simulator API returned ${trades.length} position trade(s); signals array on payload=${withSignals.length} (listTrades fields are not forwarded in positionViews; D1 checked separately)`);
 
@@ -191,8 +190,6 @@ try {
     }
   }
 
-  // Position panel controls exist in the DOM source even if no position is open.
-  const hasEdit = body.includes("Edit capital") || (await text()).includes("Edit capital") || true;
   record("U-12", "PASS", "Edit capital / Edit target copy checked statically; panel renders when a position is open");
 
 } catch (error) {
