@@ -1,0 +1,4 @@
+# Copy to .dev.vars. Wrangler loads it locally and does not upload it.
+# Generate with: openssl rand -base64 32
+# The value must decode to 32 bytes. Do not commit .dev.vars.
+TOKEN_KEY=
