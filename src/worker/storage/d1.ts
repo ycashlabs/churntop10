@@ -11,7 +11,8 @@ import type {
   TradeRecord,
 } from "../../lib/storage.js";
 import { signalResultFromRow } from "../../lib/trade-signals.js";
-import { d1Mini, type MiniDb } from "./minidb.js";
+import { planReplaceProposals, planReplaceWorkingOrders, planSaveBars, planSetSelectedRuleIds, samePosition, shouldWritePriceMark, type OrderRow, type ProposalRow } from "../../lib/sim-persist.js";
+import { d1Mini, runWrites, type MiniDb } from "./minidb.js";
 import { migrateV2Data, seedSignals as seedSignalRows } from "./migrate.js";
 
 function asPosition(row: Record<string, unknown>): PositionRecord {
@@ -118,6 +119,18 @@ export function createMiniStorage(mini: MiniDb): Storage {
       const current = await store.getSettings();
       if (!current) return;
       const next = { ...current, ...patch };
+      if (
+        current.profitTargetPct === next.profitTargetPct
+        && current.stopLossPct === next.stopLossPct
+        && current.dailyLossPct === next.dailyLossPct
+        && current.orderCap === next.orderCap
+        && current.tradingCapital === next.tradingCapital
+        && current.mode === next.mode
+        && current.killed === next.killed
+        && current.dayStartEquity === next.dayStartEquity
+        && current.dayStartDate === next.dayStartDate
+        && current.cash === next.cash
+      ) return;
       await mini.exec(
         "UPDATE app_settings SET profit_target_pct = ?, stop_loss_pct = ?, daily_loss_pct = ?, order_cap = ?, trading_capital = ?, mode = ?, killed = ?, day_start_equity = ?, day_start_date = ?, cash = ? WHERE id = 1",
         [next.profitTargetPct, next.stopLossPct, next.dailyLossPct, next.orderCap, next.tradingCapital, next.mode, next.killed ? 1 : 0, next.dayStartEquity, next.dayStartDate, next.cash],
@@ -141,6 +154,9 @@ export function createMiniStorage(mini: MiniDb): Storage {
     },
 
     async upsertPosition(position) {
+      const next = { ...position, source: position.source ?? "app" };
+      const current = await store.getPosition(position.id);
+      if (current && samePosition(current, next)) return;
       await mini.exec(
         `INSERT INTO positions (id, mode, symbol, status, trading_capital_snapshot, profit_target_pct, stop_loss_pct, buy_rule_version_id, sell_rule_version_id, avg_cost, qty, opened_at, closed_at, source)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -155,7 +171,7 @@ export function createMiniStorage(mini: MiniDb): Storage {
            qty = excluded.qty,
            closed_at = excluded.closed_at,
            source = excluded.source`,
-        [position.id, position.mode, position.symbol, position.status, position.tradingCapitalSnapshot, position.profitTargetPct, position.stopLossPct, position.buyRuleVersionId ?? null, position.sellRuleVersionId ?? null, position.avgCost, position.qty, position.openedAt, position.closedAt ?? null, position.source ?? "app"],
+        [next.id, next.mode, next.symbol, next.status, next.tradingCapitalSnapshot, next.profitTargetPct, next.stopLossPct, next.buyRuleVersionId ?? null, next.sellRuleVersionId ?? null, next.avgCost, next.qty, next.openedAt, next.closedAt ?? null, next.source],
       );
     },
 
@@ -193,6 +209,8 @@ export function createMiniStorage(mini: MiniDb): Storage {
     },
 
     async insertPriceMark(mark) {
+      const last = await mini.first<{ price: number }>("SELECT price FROM price_marks WHERE position_id = ? ORDER BY at DESC LIMIT 1", [mark.positionId]);
+      if (!shouldWritePriceMark(last?.price, mark.price)) return;
       await mini.exec("INSERT INTO price_marks (id, position_id, at, price) VALUES (?, ?, ?, ?) ON CONFLICT (id) DO NOTHING", [mark.id, mark.positionId, mark.at, mark.price]);
     },
 
@@ -400,10 +418,8 @@ export function createMiniStorage(mini: MiniDb): Storage {
     },
 
     async setSelectedRuleIds(ids) {
-      await mini.exec("DELETE FROM sim_selected_rules");
-      for (const id of ids) {
-        await mini.exec("INSERT INTO sim_selected_rules (rule_id) VALUES (?) ON CONFLICT (rule_id) DO NOTHING", [id]);
-      }
+      const existing = await store.selectedRuleIds();
+      await runWrites(mini, planSetSelectedRuleIds(existing, ids));
     },
 
     async latestRuleScoreSnapshots(mode) {
@@ -453,10 +469,8 @@ export function createMiniStorage(mini: MiniDb): Storage {
     },
 
     async saveBars(rows) {
-      await mini.exec("DELETE FROM quote_bars");
-      for (const row of rows) {
-        await mini.exec("INSERT INTO quote_bars (symbol, ts, price, volume) VALUES (?, ?, ?, ?)", [row.symbol, row.ts, row.price, row.volume]);
-      }
+      const existing = await store.listBars();
+      await runWrites(mini, planSaveBars(existing, rows, Date.now()));
     },
 
     async listBars() {
@@ -464,14 +478,8 @@ export function createMiniStorage(mini: MiniDb): Storage {
     },
 
     async replaceWorkingOrders(rows) {
-      await mini.exec("DELETE FROM sim_orders");
-      for (const item of rows) {
-        const row = item as Record<string, unknown>;
-        await mini.exec(
-          "INSERT INTO sim_orders (id, ref_id, symbol, side, type, quantity, limit_price, stop_price, status, role, opened_on, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-          [row.id, row.refId, row.symbol, row.side, row.type, row.quantity, row.limit ?? null, row.stop ?? null, row.status, row.role, row.openedOn, row.createdAt],
-        );
-      }
+      const existing = await store.listWorkingOrders();
+      await runWrites(mini, planReplaceWorkingOrders(existing, rows as OrderRow[]));
     },
 
     async listWorkingOrders() {
@@ -484,11 +492,8 @@ export function createMiniStorage(mini: MiniDb): Storage {
     },
 
     async replaceProposals(rows) {
-      await mini.exec("DELETE FROM proposals");
-      for (const item of rows) {
-        const row = item as Record<string, unknown>;
-        await mini.exec("INSERT INTO proposals (id, ref_id, symbol, verdict, message, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)", [row.id, row.refId, row.symbol, row.verdict, row.message, row.payload, row.createdAt]);
-      }
+      const existing = await store.listProposals();
+      await runWrites(mini, planReplaceProposals(existing, rows as ProposalRow[]));
     },
 
     async listProposals() {

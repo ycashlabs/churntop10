@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import { verifyAccessJwt } from "../lib/access.js";
 import { applySecurityHeaders, hostCookie } from "../lib/headers.js";
-import { nextBucket } from "../lib/rate.js";
+import { nextBucket, takeMemoryBucket } from "../lib/rate.js";
 import { randomToken, sha256Hex } from "./crypto.js";
 import type { Env } from "./env.js";
 
@@ -60,9 +60,14 @@ async function loadJwks(team: string): Promise<JsonWebKey[]> {
   return keys;
 }
 
-export async function rateLimit(c: AppContext, bucket: string, limit: number): Promise<Response | undefined> {
+export async function rateLimit(c: AppContext, bucket: string, limit: number, options?: { persist?: boolean }): Promise<Response | undefined> {
   const key = `${bucket}:${clientIp(c)}`;
   const now = Date.now();
+  if (options?.persist === false) {
+    const next = takeMemoryBucket(key, now, limit, 60_000);
+    if (!next.allow) return c.json({ error: "Too many requests. Wait a minute and try again." }, 429);
+    return undefined;
+  }
   const row = await c.env.DB.prepare("SELECT hits, window_start FROM rate_limits WHERE key = ?").bind(key).first<{ hits: number; window_start: number }>();
   const next = nextBucket({ hits: row?.hits ?? 0, windowStart: row?.window_start ?? now, now, limit, windowMs: 60_000 });
   await c.env.DB.prepare("INSERT INTO rate_limits (key, hits, window_start) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET hits = excluded.hits, window_start = excluded.window_start").bind(key, next.hits, next.windowStart).run();
