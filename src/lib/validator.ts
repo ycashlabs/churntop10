@@ -80,6 +80,11 @@ function fail(code: string, message: string, bundle?: EntryBundle): Verdict {
   return { ok: false, code, message, bundle };
 }
 
+/** Profit target and stop-loss: any positive percent, capped at 100 so a typo cannot invert the order. */
+export function validExitPct(value: number): boolean {
+  return Number.isFinite(value) && value > 0 && value <= 100;
+}
+
 export function dailyLossAmount(equityNow: number, dayStartEquity: number): number {
   return roundMoney(Math.max(0, dayStartEquity - equityNow));
 }
@@ -101,8 +106,8 @@ export function validateNewBuy(ctx: GuardContext): Verdict {
   if (!/^[A-Z]{1,5}$/.test(symbol)) {
     return fail("symbol", "Symbol must be 1 to 5 letters.");
   }
-  if (ctx.profitTargetPct < 0.1 || ctx.profitTargetPct > 3 || ctx.stopLossPct < 0.1 || ctx.stopLossPct > 5 || ctx.dailyLossPct < 0.1 || ctx.dailyLossPct > 5 || ctx.orderCap < 1 || ctx.orderCap > 1000) {
-    return fail("settings", "Profit target, stop, daily loss stop, or the order cap is outside its allowed range.");
+  if (!validExitPct(ctx.profitTargetPct) || !validExitPct(ctx.stopLossPct) || ctx.dailyLossPct < 0.1 || ctx.dailyLossPct > 5 || ctx.orderCap < 1 || ctx.orderCap > 1000) {
+    return fail("settings", "Profit target and stop-loss must be positive percents no greater than 100. Daily loss stop or the order cap is outside its allowed range.");
   }
   const quote = ctx.quote;
   if (!quote || quote.symbol.toUpperCase() !== symbol || !quote.tradable || !(quote.ask > 0)) {

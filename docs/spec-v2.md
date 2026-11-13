@@ -51,7 +51,7 @@ The v2 safety model drops the PDT day-trade cap that PR #5 still listed as a buy
 
 ## Profit target and stop-loss
 
-The profit target (0.1–3%) and the stop-loss percent are based on the **position’s cost basis**, not on account balance. After scaling in, that basis is the average cost of the whole position. Take profit may trigger before a position has been scaled to the cap.
+The profit target and the stop-loss percent are based on the **position’s cost basis**, not on account balance. After scaling in, that basis is the average cost of the whole position. Take profit may trigger before a position has been scaled to the cap. Neither percent has a fixed 0.1–3% (or similar) bound: in Settings the owner can set any positive value up to 100%. The default profit target stays 1%. Values must be finite and greater than zero; anything above 100% is rejected as not sane.
 
 ## Percentage system (very important)
 
@@ -112,7 +112,7 @@ Every rule change, status change, and approval is logged to a database history t
 
 ### Sell rules
 
-- **Take profit** — 0.1–3% above average cost. May fire before the position is full.
+- **Take profit** — the profit-target percent in Settings above average cost. That percent has no fixed 0.1–3 bound. May fire before the position is full.
 - **Stop-loss** — a percent below average cost. Off-hours, the app watches the stop every 5 minutes and sends a limit sell; this is not a resting broker stop.
 - **Exit on weakness** — price is below the 20-minute average on rising volume while SPY is falling.
 
@@ -134,7 +134,8 @@ New **signal types** need code first. A rule may only reference signal types the
 These sit **outside** the rules system. They are always on. Their numbers are editable in Settings, except where a fixed rule is stated:
 
 - **Position cap (very important):** one symbol cannot exceed 10% of total account balance. It scales automatically with the balance. See [Position cap](#position-cap-very-important).
-- Daily loss stop.
+- Profit target and stop-loss percents, based on average cost. There is no fixed 0.1–3% bound; any positive value up to 100% is allowed. The default profit target is 1%.
+- Daily loss stop (0.1–5% of the day's starting equity).
 - Order cap, which may be set high (for example 50–100 orders per day).
 - Buy only with available buying power.
 - Never borrow (no margin).

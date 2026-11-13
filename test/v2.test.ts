@@ -3,6 +3,7 @@ import { synthesizeBars } from "../src/lib/bars.js";
 import { DRAFT_RULES, scorecardFromTrades } from "../src/lib/rules.js";
 import { listSignalTypes, computeSignals, signalStrength, FIRST_BUY_SIGNALS, ADD_DIP_SIGNALS, EXIT_WEAKNESS_SIGNALS } from "../src/lib/signals.js";
 import { maxPositionNotional, sizeAdd, sizeStarter, starterNotional } from "../src/lib/sizing.js";
+import { validExitPct } from "../src/lib/validator.js";
 import { runSimulatorCycle, sellAllSimPositions, type SimState } from "../src/lib/simulator.js";
 import type { QuoteView } from "../src/lib/decode.js";
 
@@ -81,6 +82,19 @@ describe("sizing", () => {
     const add = sizeAdd({ balance: 10000, positionNotional: 200, price: 100, buyingPower: 8000, strength: 0.5, now: REGULAR });
     expect("notional" in add && add.notional).toBeCloseTo(400, 0);
     expect(sizeAdd({ balance: 10000, positionNotional: 200, price: 100, buyingPower: 8000, strength: 0, now: REGULAR })).toEqual({ error: "strength" });
+  });
+});
+
+describe("profit target and stop-loss bounds", () => {
+  it("allows any positive percent up to 100 and rejects zero, negatives, and values over 100", () => {
+    expect(validExitPct(1)).toBe(true);
+    expect(validExitPct(0.01)).toBe(true);
+    expect(validExitPct(10)).toBe(true);
+    expect(validExitPct(100)).toBe(true);
+    expect(validExitPct(0)).toBe(false);
+    expect(validExitPct(-1)).toBe(false);
+    expect(validExitPct(100.1)).toBe(false);
+    expect(validExitPct(Number.NaN)).toBe(false);
   });
 });
 

@@ -9,7 +9,7 @@ import { tradingMcpUrl } from "../lib/oauth.js";
 import { submitGatedTool } from "../lib/broker.js";
 import { assertOutgoing } from "../lib/requests.js";
 import { equityOf, ordersToday, runSimulatorCycle, sellAllSimPositions, type SimEvent, type SimState } from "../lib/simulator.js";
-import { dailyLossAmount, validateNewBuy, type GuardContext } from "../lib/validator.js";
+import { dailyLossAmount, validExitPct, validateNewBuy, type GuardContext } from "../lib/validator.js";
 import { currentRules, createRule, editRule, listHistory, scorecards, seedDraftRules, setRuleStatus } from "./rules-store.js";
 import type { RuleSide, RuleStatus } from "../lib/rules.js";
 import type { SimulatorView, RuleView, RuleHistoryView } from "../lib/api-types.js";
@@ -167,8 +167,8 @@ export class AccountTrader extends DurableObject<Env> {
   async saveSettings(input: { profitTargetPct: number; stopLossPct: number; dailyLossPct: number; orderCap: number }): Promise<Summary> {
     await this.seed();
     const { profitTargetPct, stopLossPct, dailyLossPct, orderCap } = input;
-    if (profitTargetPct < 0.1 || profitTargetPct > 3) throw new Error("Profit target must be between 0.1% and 3% above average cost.");
-    if (stopLossPct < 0.1 || stopLossPct > 5) throw new Error("Stop-loss must be between 0.1% and 5% below average cost.");
+    if (!validExitPct(profitTargetPct)) throw new Error("Profit target must be a positive percent no greater than 100.");
+    if (!validExitPct(stopLossPct)) throw new Error("Stop-loss must be a positive percent no greater than 100.");
     if (dailyLossPct < 0.1 || dailyLossPct > 5) throw new Error("Daily loss stop must be between 0.1% and 5%.");
     if (orderCap < 1 || orderCap > 1000) throw new Error("Order cap must be between 1 and 1000 orders per day.");
     await this.env.DB.prepare("UPDATE app_settings SET profit_target_pct = ?, stop_loss_pct = ?, daily_loss_pct = ?, order_cap = ? WHERE id = 1").bind(profitTargetPct, stopLossPct, dailyLossPct, orderCap).run();

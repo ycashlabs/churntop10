@@ -227,11 +227,11 @@ function SettingsPage({ summary, onRun }: { summary: Summary; onRun: (action: ()
     <section className="card">
       <h2>Settings</h2>
       <p>{SESSION_HELP}</p>
-      <label>Profit target, percent above average cost (0.1–3)
-        <input type="number" min={0.1} max={3} step={0.1} value={draft.profitTargetPct} onChange={(event) => setNumber("profitTargetPct", event.target.value)} />
+      <label>Profit target, percent above average cost (any positive percent, up to 100)
+        <input type="number" min={0} max={100} step="any" value={draft.profitTargetPct} onChange={(event) => setNumber("profitTargetPct", event.target.value)} />
       </label>
-      <label>Stop-loss, percent below average cost (0.1–5)
-        <input type="number" min={0.1} max={5} step={0.1} value={draft.stopLossPct} onChange={(event) => setNumber("stopLossPct", event.target.value)} />
+      <label>Stop-loss, percent below average cost (any positive percent, up to 100)
+        <input type="number" min={0} max={100} step="any" value={draft.stopLossPct} onChange={(event) => setNumber("stopLossPct", event.target.value)} />
       </label>
       <label>Daily loss stop, percent of the day's starting equity (0.1–5)
         <input type="number" min={0.1} max={5} step={0.1} value={draft.dailyLossPct} onChange={(event) => setNumber("dailyLossPct", event.target.value)} />

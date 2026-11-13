@@ -70,7 +70,7 @@ export const DRAFT_RULES: DraftRuleSeed[] = [
     familyId: "sell-take-profit",
     name: "Take profit",
     side: "sell",
-    body: "Sell when price is 0.1–3% above average cost, using the profit-target percent in Settings. May fire before the position is full.",
+    body: "Sell when price is the profit-target percent in Settings above average cost. That percent has no fixed 0.1–3 bound; you set any positive value up to 100. May fire before the position is full.",
     signals: [],
   },
   {
