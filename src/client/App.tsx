@@ -200,6 +200,8 @@ function TopPage({ summary, onRun }: { summary: Summary; onRun: (action: () => P
 
 function SettingsPage({ summary, onRun }: { summary: Summary; onRun: (action: () => Promise<Summary | void>) => void }) {
   const [draft, setDraft] = useState<SettingsDraft>(summary.settings);
+  const [connectUrl, setConnectUrl] = useState("");
+  const [pasted, setPasted] = useState("");
   useEffect(() => { setDraft(summary.settings); }, [summary]);
   function setNumber(key: keyof SettingsDraft, value: string) {
     setDraft({ ...draft, [key]: Number(value) });
@@ -230,10 +232,31 @@ function SettingsPage({ summary, onRun }: { summary: Summary; onRun: (action: ()
         {summary.killed && <button className="quiet" type="button" onClick={() => onRun(() => post("/api/resume"))}>Clear kill switch</button>}
         <button className="quiet" type="button" onClick={() => onRun(async () => {
           const body = await post("/api/robinhood/connect") as Summary & { url?: string };
-          if (body.url) window.location.href = body.url;
+          if (body.url) setConnectUrl(body.url);
           return undefined;
         })}>Connect Robinhood</button>
       </div>
+      {connectUrl && (
+        <div className="card">
+          <h3>Connect Robinhood</h3>
+          <ol>
+            <li><a href={connectUrl} target="_blank" rel="noopener noreferrer">Open Robinhood sign-in</a> and approve.</li>
+            <li>Robinhood then sends you to a page that won't load (it starts with <code>http://127.0.0.1:47621</code>). That's expected.</li>
+            <li>Copy the whole address from that tab's address bar and paste it here within 10 minutes.</li>
+          </ol>
+          <label>Address from the page that didn't load
+            <input value={pasted} onChange={(event) => setPasted(event.target.value)} placeholder="http://127.0.0.1:47621/callback?code=…" autoComplete="off" spellCheck={false} />
+          </label>
+          <div className="row">
+            <button type="button" disabled={!pasted.trim()} onClick={() => onRun(async () => {
+              await post("/api/robinhood/complete", { callbackUrl: pasted });
+              setConnectUrl("");
+              setPasted("");
+            })}>Finish connecting</button>
+            <button className="quiet" type="button" onClick={() => { setConnectUrl(""); setPasted(""); }}>Cancel</button>
+          </div>
+        </div>
+      )}
       <p>Saving caps, editing the Top 10, switching to Live, and connecting Robinhood each ask for the passkey again. The kill switch does not.</p>
     </section>
   );

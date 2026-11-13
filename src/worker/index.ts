@@ -10,14 +10,21 @@ import type { Summary } from "../lib/api-types.js";
 import { securityHeaders } from "../lib/headers.js";
 import { recoveryPublicBody } from "../lib/rate.js";
 import {
+  LOOPBACK_REDIRECT_URI,
   authorizationMetadataUrls,
   authorizationUrl,
   generatePkce,
+  issuerMatches,
+  parseAuthServerMetadata,
+  parseCallbackInput,
+  parseProtectedResource,
+  parseRegistration,
   protectedResourceUrls,
   registrationBody,
   resourceMetadataFromHeader,
   tokenSetFromJson,
   tradingMcpUrl,
+  type AuthServerMetadata,
 } from "../lib/oauth.js";
 import { redactJson } from "../lib/mask.js";
 import { base64ToBytes, bytesToBase64, encryptString, importTokenKey, randomToken, sha256Hex } from "./crypto.js";
@@ -277,53 +284,74 @@ app.post("/api/robinhood/connect", async (c) => {
   const stepped = await requireStepUp(c);
   if (stepped) return stepped;
   if (!c.env.TOKEN_KEY) return c.json({ error: "TOKEN_KEY is not configured." }, 503);
-  const url = new URL(c.req.url);
-  const redirectUri = `${url.origin}/api/robinhood/callback`;
+  // Robinhood's shared client only accepts loopback redirects; a web callback is refused on robinhood.com.
+  const redirectUri = LOOPBACK_REDIRECT_URI;
   try {
     const discovered = await discover(tradingMcpUrl());
     const clientId = await registerOrLoad(c, discovered, redirectUri);
     const pkce = await generatePkce();
     const state = randomToken(16);
+    await c.env.DB.prepare("DELETE FROM oauth_state WHERE expires_at < ?").bind(Date.now()).run();
     await c.env.DB.prepare("INSERT INTO oauth_state (state, verifier, redirect_uri, expires_at) VALUES (?, ?, ?, ?)").bind(state, pkce.verifier, redirectUri, Date.now() + 10 * 60 * 1000).run();
     const location = authorizationUrl({
       authorizationEndpoint: discovered.authorizationEndpoint,
       clientId,
       redirectUri,
       challenge: pkce.challenge,
-      resource: tradingMcpUrl(),
+      resource: discovered.resource,
       state,
       scope: discovered.scope,
     });
-    return c.json({ url: location });
+    console.log(redactJson({ event: "robinhood_connect_started", redirectUri, authorizationEndpoint: discovered.authorizationEndpoint }));
+    return c.json({ url: location, redirectUri, paste: true });
   } catch (error) {
+    console.log(redactJson({ event: "robinhood_connect_failed", message: error instanceof Error ? error.message : "error" }));
     return c.json({ error: error instanceof Error ? error.message : "Robinhood sign-in could not start." }, 502);
   }
 });
 
+app.post("/api/robinhood/complete", async (c) => {
+  const limited = await rateLimit(c, "rh-complete", 10);
+  if (limited) return limited;
+  const body = await c.req.json<{ callbackUrl?: unknown }>().catch(() => ({} as { callbackUrl?: unknown }));
+  const parsed = parseCallbackInput(typeof body.callbackUrl === "string" ? body.callbackUrl : "");
+  if (!parsed.ok) return c.json({ error: parsed.error }, 400);
+  const result = await finishConnect(c, parsed);
+  if (!result.ok) return c.json({ error: result.error }, 400);
+  return c.json({ connected: true });
+});
+
 app.get("/api/robinhood/callback", async (c) => {
-  const url = new URL(c.req.url);
-  const code = url.searchParams.get("code");
-  const state = url.searchParams.get("state");
-  const oauthError = url.searchParams.get("error");
-  if (oauthError || !code || !state) return c.redirect("/?robinhood=failed");
-  const saved = await c.env.DB.prepare("SELECT verifier, redirect_uri, expires_at FROM oauth_state WHERE state = ?").bind(state).first<{ verifier: string; redirect_uri: string; expires_at: number }>();
-  await c.env.DB.prepare("DELETE FROM oauth_state WHERE state = ?").bind(state).run();
-  if (!saved || saved.expires_at < Date.now() || !c.env.TOKEN_KEY) return c.redirect("/?robinhood=failed");
+  const parsed = parseCallbackInput(new URL(c.req.url).search);
+  if (!parsed.ok) return c.redirect("/?robinhood=failed");
+  const result = await finishConnect(c, parsed);
+  return c.redirect(result.ok ? "/?robinhood=connected" : "/?robinhood=failed");
+});
+
+async function finishConnect(c: AppContext, input: { code: string; state: string; iss?: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+  const saved = await c.env.DB.prepare("SELECT verifier, redirect_uri, expires_at FROM oauth_state WHERE state = ?").bind(input.state).first<{ verifier: string; redirect_uri: string; expires_at: number }>();
+  await c.env.DB.prepare("DELETE FROM oauth_state WHERE state = ?").bind(input.state).run();
+  if (!saved || saved.expires_at < Date.now()) return { ok: false, error: "That sign-in link expired or was already used. Click Connect Robinhood again." };
+  if (!c.env.TOKEN_KEY) return { ok: false, error: "TOKEN_KEY is not configured." };
   const client = await c.env.DB.prepare("SELECT client_id, token_endpoint, issuer, resource FROM rh_client WHERE id = 1").first<{ client_id: string; token_endpoint: string; issuer: string; resource: string }>();
-  if (!client) return c.redirect("/?robinhood=failed");
-  const iss = url.searchParams.get("iss");
-  if (iss && iss.replace(/\/+$/, "") !== client.issuer.replace(/\/+$/, "")) return c.redirect("/?robinhood=failed");
-  const body = new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: saved.redirect_uri, client_id: client.client_id, code_verifier: saved.verifier, resource: client.resource });
-  const response = await fetch(client.token_endpoint, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" }, body });
-  if (!response.ok) return c.redirect("/?robinhood=failed");
+  if (!client) return { ok: false, error: "Robinhood client is not registered. Click Connect Robinhood again." };
+  // Robinhood advertises authorization_response_iss_parameter_supported: true, so iss is required (RFC 9207).
+  if (!issuerMatches(input.iss, client.issuer, true)) return { ok: false, error: "The address did not come from Robinhood's sign-in. Click Connect Robinhood again." };
+  const form = new URLSearchParams({ grant_type: "authorization_code", code: input.code, redirect_uri: saved.redirect_uri, client_id: client.client_id, code_verifier: saved.verifier, resource: client.resource });
+  const response = await fetch(client.token_endpoint, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" }, body: form });
+  if (!response.ok) {
+    console.log(redactJson({ event: "robinhood_token_exchange_failed", status: response.status }));
+    return { ok: false, error: `Robinhood refused the sign-in code (HTTP ${response.status}). Click Connect Robinhood again.` };
+  }
   const tokens = tokenSetFromJson(await response.json());
-  if (!tokens) return c.redirect("/?robinhood=failed");
+  if (!tokens) return { ok: false, error: "Robinhood did not return an access token." };
   const key = await importTokenKey(c.env.TOKEN_KEY);
   const access = await encryptString(key, tokens.accessToken);
   const refresh = tokens.refreshToken ? await encryptString(key, tokens.refreshToken) : undefined;
   await c.env.DB.prepare("INSERT INTO rh_tokens (id, access_ct, access_iv, refresh_ct, refresh_iv, expires_at, lifetime_secs) VALUES (1, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET access_ct = excluded.access_ct, access_iv = excluded.access_iv, refresh_ct = excluded.refresh_ct, refresh_iv = excluded.refresh_iv, expires_at = excluded.expires_at, lifetime_secs = excluded.lifetime_secs").bind(access.ct, access.iv, refresh?.ct ?? null, refresh?.iv ?? null, tokens.expiresAt ?? null, tokens.lifetimeSecs ?? null).run();
-  return c.redirect("/?robinhood=connected");
-});
+  console.log(redactJson({ event: "robinhood_connected" }));
+  return { ok: true };
+}
 
 app.all("*", async (c) => {
   if (c.req.method !== "GET" && c.req.method !== "HEAD") return c.json({ error: "Not found." }, 404);
@@ -353,49 +381,34 @@ async function callTrader(c: AppContext, method: "summary" | "cycle" | "kill" | 
   return stub.saveTop10(arg as string[]);
 }
 
-interface Discovered {
-  authorizationEndpoint: string;
-  tokenEndpoint: string;
-  registrationEndpoint: string;
-  issuer: string;
-  scope: string;
+interface Discovered extends AuthServerMetadata {
+  resource: string;
 }
 
-async function discover(resource: string): Promise<Discovered> {
-  let metadataUrl = protectedResourceUrls(resource)[0] ?? "";
-  const probe = await fetch(resource, { method: "POST", headers: { accept: "application/json" } });
+async function discover(mcpUrl: string): Promise<Discovered> {
+  let metadataUrl = protectedResourceUrls(mcpUrl)[0] ?? "";
+  const probe = await fetch(mcpUrl, { method: "POST", headers: { accept: "application/json" } });
   const pointed = resourceMetadataFromHeader(probe.headers.get("www-authenticate") ?? "");
   if (pointed) metadataUrl = pointed;
-  const resourceDoc = await (await fetch(metadataUrl, { headers: { accept: "application/json" } })).json() as { authorization_servers?: string[] };
-  const issuer = resourceDoc.authorization_servers?.[0];
-  if (!issuer) throw new Error("Robinhood did not publish an authorization server.");
-  let server: Record<string, unknown> | undefined;
-  for (const candidate of authorizationMetadataUrls(issuer)) {
+  const resourceResponse = await fetch(metadataUrl, { headers: { accept: "application/json" } });
+  if (!resourceResponse.ok) throw new Error(`Robinhood resource metadata returned HTTP ${resourceResponse.status}.`);
+  const resourceDoc = parseProtectedResource(await resourceResponse.json());
+  for (const candidate of authorizationMetadataUrls(resourceDoc.issuer)) {
     const response = await fetch(candidate, { headers: { accept: "application/json" } });
     if (!response.ok) continue;
-    server = await response.json() as Record<string, unknown>;
-    break;
+    return { ...parseAuthServerMetadata(await response.json()), resource: resourceDoc.resource };
   }
-  if (!server) throw new Error("Robinhood sign-in metadata was not found.");
-  const scope = Array.isArray(server.scopes_supported) ? String(server.scopes_supported[0] ?? "internal") : "internal";
-  return {
-    authorizationEndpoint: String(server.authorization_endpoint),
-    tokenEndpoint: String(server.token_endpoint),
-    registrationEndpoint: String(server.registration_endpoint),
-    issuer: String(server.issuer ?? issuer).replace(/\/+$/, ""),
-    scope,
-  };
+  throw new Error("Robinhood sign-in metadata was not found.");
 }
 
 async function registerOrLoad(c: AppContext, discovered: Discovered, redirectUri: string): Promise<string> {
   const saved = await c.env.DB.prepare("SELECT client_id FROM rh_client WHERE id = 1").first<{ client_id: string }>();
   if (saved?.client_id) return saved.client_id;
   const response = await fetch(discovered.registrationEndpoint, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify(registrationBody(redirectUri)) });
-  if (!response.ok) throw new Error("Robinhood client registration failed.");
-  const body = await response.json() as { client_id?: string };
-  if (!body.client_id) throw new Error("Robinhood did not return a client id.");
-  await c.env.DB.prepare("INSERT INTO rh_client (id, client_id, token_endpoint, registration_endpoint, issuer, resource) VALUES (1, ?, ?, ?, ?, ?)").bind(body.client_id, discovered.tokenEndpoint, discovered.registrationEndpoint, discovered.issuer, tradingMcpUrl()).run();
-  return body.client_id;
+  if (!response.ok) throw new Error(`Robinhood client registration failed (HTTP ${response.status}).`);
+  const { clientId } = parseRegistration(await response.json());
+  await c.env.DB.prepare("INSERT INTO rh_client (id, client_id, token_endpoint, registration_endpoint, issuer, resource) VALUES (1, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET client_id = excluded.client_id, token_endpoint = excluded.token_endpoint, registration_endpoint = excluded.registration_endpoint, issuer = excluded.issuer, resource = excluded.resource").bind(clientId, discovered.tokenEndpoint, discovered.registrationEndpoint, discovered.issuer, discovered.resource).run();
+  return clientId;
 }
 
 export { AccountTrader };
