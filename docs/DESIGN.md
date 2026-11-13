@@ -253,7 +253,7 @@ All strings below are **verbatim** from `src/client/App.tsx` and `SESSION_HELP` 
 ### 6.1 Document and chrome
 
 - HTML title / `h1`: `Churn Top 10`
-- Loading (no session yet): `Loading…`
+- Loading (no session yet): `Loading…`. If the session request fails, keep `Loading…` and also show the error in the same error style as the account-loading screen. The message is the API `error` field when the response body has one, otherwise `Request failed.` (from `api()`), or `Could not load.` if the failure has no message.
 - Loading (authenticated, summary not in yet): `Loading the account…`
 - Generic load failure: `Could not load.`
 - Generic action failure: `Request failed.`
@@ -764,6 +764,7 @@ Dates are America/Chicago unless noted. All of the following were agreed 13 Nove
 | 13 Nov 2026 | Holdings sync, live order records, simulator auto-start (PR #8). Migration `0004`. Promoted to prod the same day (merge `252b479`, Worker `1259682e-103a-491f-a6dd-9ab2b69f589a`). See [HANDOVER.md](HANDOVER.md). |
 | 13 Nov 2026 | Persist `trade_signals` (id, value, threshold, fired) on every buy/add/exit. Migration `0005` applied on prod at 8:26:53 AM CST (Worker `286f9178-…`, rollback `1259682e-…`). |
 | 13 Nov 2026 | Restore signal `name`/`reason` on `listTrades` (migration `0006`), require live `proposeLiveEntries` signals to fire before placing (same `allRequiredSignalsFired` rule as the simulator), and show stored signals on the trades table with the §6 wording. Promoted to prod the same day (merge `1376f96`, Worker `a776d60f-86da-460e-8512-b1abaa079e3b`, rollback `286f9178-…`). `0006` applied at 8:45:27 AM CST (pre-`0006` bookmark `000000a2-00000000-00005122-15227bc7e1bb4436c9211a513f305447`). The NVDA 7:55 / 8:00 AM CST backfill was applied in the 8:45 AM CST window (6 rows; rerun inserts 0). |
+| 13 Nov 2026 | If the session request fails, the first paint keeps `Loading…` and also shows the error (API `error`, else `Request failed.` or `Could not load.`). Dev-only until a later prod go-ahead. |
 | 13 Nov 2026 (planned, not built) | AI-created Experimenting rules; AI approve/retire suggestions; rule points 0–100 with the weights in [§9](#9-planned-approved-not-built); weekly Saturday 9:00 AM CST review; churncapital.com later. |
 
 ---
