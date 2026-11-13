@@ -2,15 +2,17 @@
 
 Living snapshot of ids and pending decisions: [HANDOVER.md](HANDOVER.md). Nothing in this note is a secret value. Prod shares no data or credentials with dev.
 
-## Current prod (PR #8, 13 November 2026, America/Chicago)
+## Current prod (PR #9, 13 November 2026, America/Chicago)
 
-- Merge of PR #8: `252b479ad6261b6ba50d01412fe750bcd9283177`. Worker `churntop10-prod` at https://top10.ycashlabs.com (Workers Custom Domain). Version **`1259682e-103a-491f-a6dd-9ab2b69f589a`**, uploaded **7:50:44 AM CST**. Script SHA-256 `c53d6d26371c89ee6f429fc3f24cfd2781a2d0d3cc2727128891de9730692576`. Embedded UI, no `assets`, `TOKEN_KEY` kept, `ALLOW_LIVE_TRADING` is `"0"`, `ENVIRONMENT` is `prod`, `ACCESS_ENFORCE` is `1`. Cron is `*/5 * * * *`.
-- D1 `churntop10-prod` (`b2e4f00d-c7a2-41a6-a75f-12a3043ca20e`) has `0001_init.sql` through `0004_live_sync.sql`. Pre-`0004` Time Travel bookmark: `00000097-00000000-00005122-dc89ae249ceaced2a400bf9f08d1623d`. **`0005` is not on prod yet** (waits for go-ahead).
-- The auto-start Worker **does** run `cycleSimulator` when there is no open sim position. A starter NVDA (fake money) opened at **7:55:53 AM CST**. An imported live TSLL (qty 1, avg 11.05) was recorded at **7:52:39 AM CST**. See HANDOVER for ids.
+- Merge of PR #9: `8aa3502d210597d03d499a91bd14e7253f3a196c` (CI on `main` run 52 success at 8:26:45 AM CST). Worker `churntop10-prod` at https://top10.ycashlabs.com (Workers Custom Domain). Version **`286f9178-e8f6-407f-b7c7-ab5cf6901144`**, uploaded **8:27:02 AM CST**. Script SHA-256 `496fbad92fdf9a5f8ec78b7348f882638e1cd0513e941b330a80f0bdf821fca9` (same bundle as the then-current dev Worker). Cloudflare etag `fc98d05143b06d67b4e9d13088ae2eeb8a0476e1b5df30d8f3a555879cb0c055`. Embedded UI, no `assets`, `TOKEN_KEY` kept, `ALLOW_LIVE_TRADING` is `"0"`, `ENVIRONMENT` is `prod`, `ACCESS_ENFORCE` is `1`. Cron is still `*/5 * * * *` (unchanged).
+- D1 `churntop10-prod` (`b2e4f00d-c7a2-41a6-a75f-12a3043ca20e`) has `0001_init.sql` through **`0005_trade_signals_threshold.sql`**. `0005` was applied and recorded at **8:26:53 AM CST** / 14:26:53 UTC. Pre-`0005` Time Travel bookmark (taken immediately before the ALTER): `0000009e-00000421-00005122-8bffaec3864d5a10a2b2344a5fcc94b5`. Pre-`0004` bookmark remains `00000097-00000000-00005122-dc89ae249ceaced2a400bf9f08d1623d`. PRAGMA on `trade_signals` is `trade_id, signal_id, value, passed, threshold`.
+- Rollback target for this upload remains the PR #8 Worker **`1259682e-103a-491f-a6dd-9ab2b69f589a`** (uploaded 7:50:44 AM CST, SHA-256 `c53d6d26371c89ee6f429fc3f24cfd2781a2d0d3cc2727128891de9730692576`).
+- Unauthenticated GET `/` and `/api/health` still return HTTP 302 to `https://dawn-rice-07a4.cloudflareaccess.com/cdn-cgi/access/login/top10.ycashlabs.com` (audience kid `b05d3bc5…`).
+- The 8:30 AM CST cron ran on the new Worker at **8:30:59 AM CST** (`sim_cycle`, session `regular`, `quoteSource` `robinhood`, `events` 1). That event was `broker_stop_attached` for the open NVDA sim position at stop **167.86** (regular open; the synthetic off-hours stop converted to a broker-stop record). No new sim fills after the 8:27:02 AM CST upload, so prod has not yet observed a post-upload fill writing `trade_signals`. Local wrangler already confirmed the same bundle does.
+- Existing NVDA sim trades still have **0** `trade_signals` rows: starter `3989afa2-7976-4b28-b703-4c5e0352a9a6` (1 @ 169.27 at 7:55:30 AM CST) and a later add `5aa49ca9-f1c4-4622-aef6-8e1f8f4a0359` (4 @ 169.63 at 8:00:30 AM CST). A backfill dry-run (`apply=false`) planned 3 rows for `3989afa2-…` and 3 more for `5aa49ca9-…`; **nothing was inserted**. Applying the backfill waits for a second explicit OK. Imported live TSLL is unchanged. See HANDOVER for ids and the planned row values.
 - Access application `Churn Top 10 prod` (`8f553625-0283-41e0-8a63-c43789e8c3a5`), team `dawn-rice-07a4`, audience `b05d3bc57044f2fd02b7e9666d7e61a18e236784bdcbda9ea8322b9d6fe14517`. Owner only: `tom2258@gmail.com`. No bypass, no service token.
-- Rollback of this upload: previous Worker `26e737de-8705-43b4-9833-d60e57a90f8e`.
 
-The section below is the earlier v3 verification (before PR #8). Prefer the current section and HANDOVER when they disagree.
+The section below is the earlier PR #8 / v3 verification. Prefer the current section and HANDOVER when they disagree.
 
 Deployed from `main` at merge commit `f53af3ec0ab03a9965ae3c547923037e37a60c95` (PR #7, head `8db2a5f3586def16320920fa1304e2324acdf3fb`). Nothing in this note is a secret value. Prod shares no data or credentials with dev.
 

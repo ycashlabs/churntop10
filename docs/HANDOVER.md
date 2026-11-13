@@ -6,7 +6,7 @@ Nothing in this note is a secret value. Never paste `TOKEN_KEY`, OAuth tokens, o
 
 Read [DESIGN.md](DESIGN.md) in full first, then this file. Safety rules are in [../AGENTS.md](../AGENTS.md).
 
-Last updated: 13 November 2026, 8:15 AM CST, America/Chicago.
+Last updated: 13 November 2026, 8:32 AM CST, America/Chicago.
 
 ## Owner and approval
 
@@ -65,16 +65,20 @@ Redirect is loopback `http://127.0.0.1:47621/callback` only. Do this on **prod**
 
 ### Prod
 
-- Merge of PR #8: `252b479ad6261b6ba50d01412fe750bcd9283177` (branch head `ac81d8fb4e460c331d60ae37e1cf562212815a3f`).
-- Worker version **`1259682e-103a-491f-a6dd-9ab2b69f589a`**, uploaded **7:50:44 AM CST**. Script SHA-256 `c53d6d26371c89ee6f429fc3f24cfd2781a2d0d3cc2727128891de9730692576`. Etag `ecac6929b155f0b9bb7fa6d5a25d9e442705ce049bda9b2a8457a88594559efe`. Embedded UI, no `assets`, `TOKEN_KEY` kept, gate `"0"`, `ENVIRONMENT=prod`.
-- Previous Worker (rollback): `26e737de-8705-43b4-9833-d60e57a90f8e` (v3 from `f53af3e`).
-- Pre-`0004` Time Travel bookmark: `00000097-00000000-00005122-dc89ae249ceaced2a400bf9f08d1623d` (taken immediately before applying `0004`).
-- Older pre-`0003` bookmark (v1 schema): `0000008c-00000000-00005122-058b292ec81c213fef725a24ea5b3e74`.
-- `d1_migrations`: `0001_init.sql`, `0002_v2.sql`, `0003_v3.sql`, `0004_live_sync.sql` (applied 7:50:00 AM CST / 13:50:00 UTC). **`0005` is not on prod yet.**
+- Merge of PR #9: `8aa3502d210597d03d499a91bd14e7253f3a196c`. `main` CI run 52 (push) succeeded at **8:26:45 AM CST**.
+- Worker version **`286f9178-e8f6-407f-b7c7-ab5cf6901144`**, uploaded **8:27:02 AM CST**. Script SHA-256 `496fbad92fdf9a5f8ec78b7348f882638e1cd0513e941b330a80f0bdf821fca9`. Etag `fc98d05143b06d67b4e9d13088ae2eeb8a0476e1b5df30d8f3a555879cb0c055`. Embedded UI, no `assets`, `TOKEN_KEY` kept, gate `"0"`, `ENVIRONMENT=prod`. Deployment id `ad6d9dc0-01c3-43d5-8c6c-c06baf3c743f`.
+- Rollback target: PR #8 Worker **`1259682e-103a-491f-a6dd-9ab2b69f589a`** (uploaded 7:50:44 AM CST, SHA-256 `c53d6d26371c89ee6f429fc3f24cfd2781a2d0d3cc2727128891de9730692576`). Do not roll past that unless the owner asks.
+- Pre-`0005` Time Travel bookmark: `0000009e-00000421-00005122-8bffaec3864d5a10a2b2344a5fcc94b5` (taken immediately before applying `0005`).
+- Pre-`0004` bookmark: `00000097-00000000-00005122-dc89ae249ceaced2a400bf9f08d1623d`. Older pre-`0003` bookmark (v1 schema): `0000008c-00000000-00005122-058b292ec81c213fef725a24ea5b3e74`.
+- `d1_migrations`: `0001_init.sql`, `0002_v2.sql`, `0003_v3.sql`, `0004_live_sync.sql` (applied 7:50:00 AM CST / 13:50:00 UTC), **`0005_trade_signals_threshold.sql`** (applied **8:26:53 AM CST** / 14:26:53 UTC). PRAGMA on `trade_signals`: `trade_id, signal_id, value, passed, threshold`.
 - Prod has a stored Robinhood sign-in (`rh_tokens` row present; values not read).
 - **TSLL imported live position** (from Account Summary at **7:52:39 AM CST**): id `d12eba10-4965-4b41-9b27-8d00d07e843e`, `mode=live`, `source=imported`, qty **1**, avg cost **11.05**, no buy/sell rule, capital snapshot 999.95. Matching `broker_import` trade and `exit_type=imported` review. Audit `live_import`. This is the real holding (the 1 share filled earlier at about $11.048); do not place or cancel it.
-- **NVDA simulator starter** (cron `cycleSimulator` at **7:55:53 AM CST**): position `283f227c-ee68-4cb6-ae5b-444f761ecaae`, qty 1 @ **169.27**, `source=app`, session `extended`, quoteSource `robinhood`. Buy rule First buy on strength v1 (`45cd3ad4-7f7f-4ded-963b-6cb4d78634ba`). Synthetic stop watching at 167.58; take-profit working at 170.96. Trade id `3989afa2-7976-4b28-b703-4c5e0352a9a6`. **No `trade_signals` rows yet** (signals live on the `sim_entry` audit and proposal). Backfill is prepared; prod apply waits for go-ahead.
-- Mode `view_only`, Sell All off, Trading capital 10000, sim cash 9830.73. Prod Top 10 includes SPY (not AVGO).
+- **NVDA simulator position** `283f227c-ee68-4cb6-ae5b-444f761ecaae` (buy rule First buy on strength v1 `45cd3ad4-7f7f-4ded-963b-6cb4d78634ba`, sell Take profit v1 `bc1ee88c-…`, `source=app`, quoteSource `robinhood`):
+  - Starter buy trade `3989afa2-7976-4b28-b703-4c5e0352a9a6` at **7:55:30 AM CST**, 1 share @ **169.27**, session `extended`. `sim_entry` audit at 7:55:53 AM CST.
+  - Add buy trade `5aa49ca9-f1c4-4622-aef6-8e1f8f4a0359` at **8:00:30 AM CST**, 4 shares @ **169.63**, session `extended`, rule Add on strength (audit 8:00:56 AM CST).
+  - Both trades still have **0** `trade_signals` rows (they were written by the pre-PR #9 Worker). The 8:30:59 AM CST cron on the new Worker attached a broker stop at **167.86** (`broker_stop_attached`; `sim_cycle` `events` 1, session `regular`). No newer sim fill since the 8:27:02 AM CST upload.
+  - Backfill dry-run (`apply=false`, 8:27 AM CST window) planned 6 rows and inserted none: for `3989afa2-…`, `price_above_20m_avg` value 0.5625 threshold 0 fired, `spy_up` 0.5025 / 0 / fired, `volume_above_recent` 1.3833 / 1 / fired; for `5aa49ca9-…`, `price_above_20m_avg` 0.7913 / 0 / fired, `spy_up` 0.6031 / 0 / fired, `volume_above_recent` 1.3427 / 1 / fired. **Applying the backfill waits for a second explicit OK.**
+- Mode `view_only`, Sell All off, Trading capital 10000. Prod Top 10 includes SPY (not AVGO).
 - Access still owner-only; unauthenticated requests 302 to the team login.
 
 ### Dev
@@ -86,7 +90,7 @@ Redirect is loopback `http://127.0.0.1:47621/callback` only. Do this on **prod**
 
 ### Open work / pending owner decisions
 
-- **Prod migration `0005_trade_signals_threshold.sql`** and **backfill of the NVDA `trade_signals` rows**: prepared (`scripts/backfill-trade-signals.mjs`, `scripts/cf-templates/backfill-trade-signals.js`). Needs explicit go-ahead. Steps are below. Do not do this without it.
+- **Prod backfill of NVDA `trade_signals` rows** (trades `3989afa2-7976-4b28-b703-4c5e0352a9a6` and `5aa49ca9-f1c4-4622-aef6-8e1f8f4a0359`): dry-run completed, nothing inserted. Needs a second, explicit OK before `apply=true`. Migration `0005` and the trade_signals Worker are already on prod (see Current state).
 - **GitHub `workflow` scope**: required to add the dedicated `design` CI job in `.github/workflows/ci.yml`. Until then, `npm test` runs the check (see [ci-design-job.pending.yml](ci-design-job.pending.yml)).
 - Planned, not built: AI-created rules; rule points 0–100; weekly Saturday 9:00 AM CST review (owner routine, not a Worker cron); churncapital.com; live 24/5 engine; assign-sell-rule UI; Postgres / failover.
 
@@ -103,14 +107,14 @@ Redirect is loopback `http://127.0.0.1:47621/callback` only. Do this on **prod**
 4. Local: `npm install`, `.dev.vars`, `npm test`, `npm run dev`.
 5. If asked to operate prod, re-read pending decisions first.
 
-## Prod steps for `trade_signals` (wait for go-ahead)
+## Prod steps for the NVDA `trade_signals` backfill (wait for a second OK)
 
-Do **not** run these until the owner explicitly approves this migration and backfill. No Robinhood orders, no settings changes, gate stays `"0"`.
+Migration `0005` is already applied and recorded (8:26:53 AM CST). The trade_signals Worker is already on prod (`286f9178-…`, 8:27:02 AM CST). A dry-run with `apply = false` already planned the rows below and inserted nothing. Do **not** run the apply until the owner explicitly approves this backfill. No Robinhood orders, no settings changes, gate stays `"0"`.
 
-1. Time Travel bookmark on prod D1 `b2e4f00d-c7a2-41a6-a75f-12a3043ca20e` (`GET .../time_travel/bookmark`). Record the id here.
-2. Apply `migrations/0005_trade_signals_threshold.sql` (one statement): `ALTER TABLE trade_signals ADD COLUMN threshold REAL;`
-3. Record it: `INSERT INTO d1_migrations (name, applied_at) SELECT '0005_trade_signals_threshold.sql', CURRENT_TIMESTAMP WHERE NOT EXISTS (SELECT 1 FROM d1_migrations WHERE name = '0005_trade_signals_threshold.sql');`
-4. Dry-run the backfill (`scripts/cf-templates/backfill-trade-signals.js` with `apply = false` and the prod D1 id). Confirm the plan includes trade `3989afa2-7976-4b28-b703-4c5e0352a9a6` with `price_above_20m_avg` (value 0.5625, threshold 0), `spy_up` (0.5025, 0), `volume_above_recent` (1.3833, 1), all fired.
-5. With a second, explicit OK, set `apply = true` and run once.
-6. Upload the trade_signals Worker to `churntop10-prod` only if that deploy is also approved (embedded UI, `keep_bindings: ["secret_text"]`, `ALLOW_LIVE_TRADING="0"`, `ENVIRONMENT=prod`, no `assets`, no DO remigration). `ensureTradeSignalsSchema()` can add the column at runtime, but still prefer the recorded migration.
-7. Verify `trade_signals` for the NVDA trade; leave Access, cron, and the gate unchanged.
+1. Already done: Time Travel bookmark `0000009e-00000421-00005122-8bffaec3864d5a10a2b2344a5fcc94b5`.
+2. Already done: `ALTER TABLE trade_signals ADD COLUMN threshold REAL;` recorded as `0005_trade_signals_threshold.sql`.
+3. Already done: dry-run (`scripts/cf-templates/backfill-trade-signals.js`, `apply = false`, prod D1). Planned 6 rows, 0 inserted:
+   - `3989afa2-7976-4b28-b703-4c5e0352a9a6`: `price_above_20m_avg` 0.5625 / 0 / fired, `spy_up` 0.5025 / 0 / fired, `volume_above_recent` 1.3833 / 1 / fired.
+   - `5aa49ca9-f1c4-4622-aef6-8e1f8f4a0359` (the 8:00 AM CST add, also missing rows): `price_above_20m_avg` 0.7913 / 0 / fired, `spy_up` 0.6031 / 0 / fired, `volume_above_recent` 1.3427 / 1 / fired.
+4. With a second, explicit OK, set `apply = true` and run once. The script must still refuse to apply unless that flag is set.
+5. Verify `trade_signals` for both NVDA trades; leave Access, cron, and the gate unchanged.

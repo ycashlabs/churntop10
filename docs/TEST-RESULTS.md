@@ -8,7 +8,7 @@ Summary: **50 PASS**, **1 FAIL**, **9 NOT BUILT** (60 tests).
 | --- | --- | --- | --- | --- |
 | S-01 | Schema | Fresh DB is migrations 0001–0005 in order, portable types | PASS |  |
 | S-02 | Schema | positions and trades have source default app (0004) | PASS |  |
-| S-03 | Schema | trade_signals has threshold (0005) on this branch / dev | PASS | 0005 exists in the repo. Applied and recorded on dev D1 at 8:12:02 AM CST (America/Chicago); PRAGMA shows threshold. Not applied on prod. |
+| S-03 | Schema | trade_signals has threshold (0005) on this branch / dev | PASS | 0005 exists in the repo. Applied and recorded on dev D1 at 8:12:02 AM CST (America/Chicago) and on prod D1 at 8:26:53 AM CST; PRAGMA shows threshold on both. |
 | S-04 | Schema | v3 relationships: rules, versions, signals, positions, trades | PASS |  |
 | S-05 | Schema | app_settings seed columns include legacy pdt_limit and max_order_pct | PASS |  |
 | S-06 | Schema | trade_signals persists trade_id, signal_id, value, threshold, fired | PASS |  |
@@ -48,7 +48,7 @@ Summary: **50 PASS**, **1 FAIL**, **9 NOT BUILT** (60 tests).
 | H-03 | Holdings / live / simulator | Live app orders write positions/trades with broker_order_id and source=app | PASS |  |
 | H-04 | Holdings / live / simulator | Simulator auto-start: tick when no open sim position | PASS |  |
 | H-05 | Holdings / live / simulator | Every buy/add/exit writes trade_signals (id, value, threshold, fired) when signals were computed | PASS | Local wrangler sim starter (trade 0927c265-6887-4e62-9c6f-8cdef4488df9) wrote three trade_signals rows: price_above_20m_avg value 0.5585 threshold 0 fired, spy_up 0.5025 threshold 0 fired, volume_above_recent 1.3833 threshold 1 fired. positionViews does not forward those fields to the client. |
-| H-06 | Holdings / live / simulator | Prod NVDA 7:55 fill has trade_signals rows | FAIL | Prod trade 3989afa2-7976-4b28-b703-4c5e0352a9a6 has 0 trade_signals rows. Prod D1 has 0001–0004 only (no threshold column). 0005 and the NVDA backfill wait for explicit go-ahead. No prod changes were made. |
+| H-06 | Holdings / live / simulator | Prod NVDA 7:55 fill has trade_signals rows | FAIL | Prod trade 3989afa2-7976-4b28-b703-4c5e0352a9a6 still has 0 trade_signals rows after the 8:30:59 AM CST cron. Prod 0005 is applied (8:26:53 AM CST). A dry-run (`apply=false`) planned 3 rows for this trade and 3 for the 8:00 AM CST add 5aa49ca9-f1c4-4622-aef6-8e1f8f4a0359 (also 0 rows); nothing was inserted. Applying the backfill waits for a second explicit OK. |
 | V-01 | Review / Access / security | Review lists imported open holdings with exitType imported and the imported bot note | PASS | imported holding visible on Review |
 | A-01 | Review / Access / security | Access owner-only; Worker re-checks JWT when ACCESS_ENFORCE=1; no bypass or service token in repo config | PASS | Access apps Churn Top 10 prod and dev each have a single Owner only allow policy for tom2258@gmail.com. No exclude/require, no bypass or service token. Worker ACCESS_ENFORCE is 1 on both. |
 | A-02 | Review / Access / security | Passkey session 12 hours; step-up 5 minutes; Sell All and Edit capital are not step-up | PASS |  |
