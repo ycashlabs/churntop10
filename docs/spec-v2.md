@@ -14,9 +14,9 @@ Five screens:
 
 - **Account Summary** — the real Robinhood account only. No simulator cash, positions, or orders appear here.
 - **Top 10** — the list that limits new buys. See [Top 10](#top-10).
-- **Rules** — the trading contract: named Buy rules and Sell rules the user edits and the bot proofreads. See [Rules](#rules).
+- **Rules** — the trading contract: named Buy rules and Sell rules the user edits and the bot proofreads. See [Rules](#rules) and the [draft starting rules](#draft-starting-rules-contract).
 - **Simulator** — a separate screen, fake money only. It can run any selected rules, including ones that are still Experimenting. It does not write into Account Summary.
-- **Settings** — buy amount min and max, safety limits, and other owner controls. See [Buy amount](#buy-amount) and [Safety limits](#safety-limits).
+- **Settings** — percentage sizing, safety limits, and other owner controls. See [Percentage system](#percentage-system-very-important) and [Safety limits](#safety-limits).
 
 ## Sell All Positions
 
@@ -26,7 +26,7 @@ Live real-money trading stays off until the user explicitly approves, so this co
 
 ## Top 10
 
-The list is editable at any time. It limits **new buys only**. A position in a symbol that is later removed from the list is still managed and can still be sold. Adding to a symbol already held (dollar-cost averaging) follows the [DCA](#dollar-cost-averaging) and [Buy amount](#buy-amount) rules; it is not blocked merely because the list changed after the position was opened, but a new symbol still has to be on the list to be bought for the first time.
+The list is editable at any time. It limits **new buys only**. A position in a symbol that is later removed from the list is still managed and can still be sold. Adding to a symbol already held follows the [scaling-in](#scaling-in-very-important) rules; it is not blocked merely because the list changed after the position was opened, but a new symbol still has to be on the list to be bought for the first time.
 
 ## 24/5 sessions and the synthetic stop
 
@@ -36,7 +36,7 @@ This summarizes the design in PR #5, `docs/sessions.md` (session times are Ameri
 
 | Session | Clock (ET) | Order types |
 | --- | --- | --- |
-| Regular | Weekdays 09:30–16:00 | Limit, market, broker `stop_market` / `stop_limit` |
+| Regular | Weekdays 09:30–16:00 | Limit, market, broker `stop_market` / `stop_limit`. Fractional shares are allowed. |
 | Extended | Weekdays 07:00–09:30 and 16:00–20:00 | Limit orders only |
 | Overnight (24 Hour Market) | Sunday 20:00 through Friday 20:00, outside regular and extended | Whole-share limit orders only, and only for symbols on Robinhood’s eligible 24 Hour Market list (that list changes) |
 | Closed | Friday 20:00 through Sunday 20:00 | No new orders and no exits |
@@ -45,28 +45,43 @@ Outside regular hours there is no resting broker stop. The app holds a **synthet
 
 The stop is only checked when a cycle runs, normally every 5 minutes. A move between checks, a missed cron, a gap through the stop, or the weekend close can pass the stop before a sell is sent.
 
-New buys are skipped when the bid-ask spread is too wide (wider than 1% of mid) or a live quote is stale (older than 5 minutes), or when bid or ask is missing. Overnight buys are whole shares only, and only if the symbol is on the eligible list. ATS price bands around a reference near 8:00 PM ET can reject far-away limits. `get_equity_tradability` output fields for eligibility were not in the captured MCP contract; do not assume every Top 10 name can be bought overnight. A later live path should review the order for that session before placing it.
+New buys are skipped when the bid-ask spread is too wide (wider than 1% of mid) or a live quote is stale (older than 5 minutes), or when bid or ask is missing. Overnight buys are whole shares only, and only if the symbol is on the eligible list. If one share costs more than the [position cap](#position-cap-very-important), that symbol cannot be bought overnight. ATS price bands around a reference near 8:00 PM ET can reject far-away limits. `get_equity_tradability` output fields for eligibility were not in the captured MCP contract; do not assume every Top 10 name can be bought overnight. A later live path should review the order for that session before placing it.
 
 The v2 safety model drops the PDT day-trade cap that PR #5 still listed as a buy guard. See [Safety limits](#safety-limits).
 
 ## Profit target and stop-loss
 
-The profit target (0.1–3%) and the stop-loss percent are based on the **position’s cost basis**, not on account balance. After dollar-cost averaging, that basis is the average cost of the whole position.
+The profit target (0.1–3%) and the stop-loss percent are based on the **position’s cost basis**, not on account balance. After scaling in, that basis is the average cost of the whole position. Take profit may trigger before a position has been scaled to the cap.
 
-## Buy amount
+## Percentage system (very important)
 
-Settings has a **buy amount minimum** and a **buy amount maximum**. Those limits apply to every buy, including DCA adds. Sells have no dollar limit.
+Agreed 13 November 2026. **Percentages only. Dollar caps are removed.**
 
-### Open questions
+The earlier Settings fields for a buy amount minimum and maximum in dollars are replaced by percentages. Sells have no dollar limit (and no dollar cap).
 
-These are not decided:
+The [position cap](#position-cap-very-important) and the [starter buy](#scaling-in-very-important) are already defined as percentages of total account balance (10% and 2% respectively).
 
-- A **maximum total dollars per symbol** (proposed).
-- **Fractional shares in regular hours only** (whole shares remain required overnight, and should stay the default wherever the broker requires them).
+### Open question
 
-## Dollar-cost averaging
+Pending the user’s answer, and not yet decided:
 
-Adds to an existing position need a logical, **signal-based** reason. Allowed kinds of reason include money flow, momentum, market mood (including SPY/QQQ), and relative strength. A price drop alone is not a sufficient reason to add.
+- Whether **buy sizes** (the percentage fields that replaced the old dollar min/max) are percentages of account balance.
+
+## Position cap (very important)
+
+This is a **safety limit, always on**, sitting outside the rules system. One symbol’s position cannot exceed **10% of the total account balance**. At $300 of balance, that is $30. The cap scales automatically when money is deposited or the balance otherwise changes.
+
+Overnight trading is whole shares only, so a symbol whose share price is above the current cap cannot be bought overnight. Fractional shares are allowed in regular hours.
+
+## Scaling in (very important)
+
+A new position starts with a **starter buy of 20% of the max position**, which is **2% of account balance** (20% of the 10% cap). The remaining 80% is added only as signals confirm.
+
+There is **no fixed number of adds and no fixed add size**. The signals decide when to add and how much: a stronger signal means a bigger add; a weak signal means a small add or none. Every add must stay within the 10% position cap.
+
+Each add is logged with the signals that fired, their values, and why that size was chosen. Take profit can trigger before the position is full.
+
+A price drop alone is not a sufficient reason to add. Adds need a signal-based reason (see the draft buy rules below).
 
 ## Rules
 
@@ -83,9 +98,31 @@ Only the user can mark a rule **Proven**. Live trading uses only Proven rules. I
 
 Editing a Proven rule moves it back to Experimenting for **new** trades. Open trades keep the **rule version** (buy and sell) they started with.
 
-Every rule change, status change, and approval is logged to a database history table with a timestamp (audit). Each trade records the rule version and which signals fired, with their values.
+Every rule change, status change, and approval is logged to a database history table with a timestamp (audit). Each trade records the rule version and which signals fired, with their values. Each scale-in add also logs the signals, values, and the reason for the size, as above.
+
+## Draft starting rules contract
+
+**Pending the user’s approval.** All of the rules below start as **Experimenting**. Their parameters are **starting guesses for the Simulator**, not proven values. They are recorded here so the Simulator has a first contract to run; they are not live-trading rules until the user marks them Proven.
+
+### Buy rules
+
+- **First buy on strength** — price is above the 20-minute average, volume is above recent normal, and SPY is up.
+- **Add on strength** — add to an existing position when strength signals confirm, within the position cap and the scaling-in rules.
+- **Add on a healthy dip** — price is below average cost but still above the 20-minute low, there is no volume spike on the selling, and SPY is not falling hard.
+
+**Common buy constraints** (apply to every buy, including the starter and later adds): percentage sizing only (no dollar caps); stay inside the 10% position cap; buy only with available buying power and never on margin; Top 10 limits first buys of a new symbol; session, quote-quality, overnight whole-share, and eligibility rules in the 24/5 section; each add must have a signal-based reason and must log the signals, values, and chosen size.
+
+### Sell rules
+
+- **Take profit** — 0.1–3% above average cost. May fire before the position is full.
+- **Stop-loss** — a percent below average cost. Off-hours, the app watches the stop every 5 minutes and sends a limit sell; this is not a resting broker stop.
+- **Exit on weakness** — price is below the 20-minute average on rising volume while SPY is falling.
+
+**Common sell constraints:** no dollar limit; partial or full exits are allowed; off-hours exits are limit orders only.
 
 ## Signal lifecycle
+
+Confirmed. The lifecycle is:
 
 1. **Discover** — a candidate signal is identified.
 2. **Experiment** — it runs for days, weeks, or months in the Simulator, with a scorecard: win rate, average profit, worst loss, and trade count.
@@ -96,8 +133,9 @@ New **signal types** need code first. A rule may only reference signal types the
 
 ## Safety limits
 
-These sit **outside** the rules system. They are always on. Their numbers are editable in Settings:
+These sit **outside** the rules system. They are always on. Their numbers are editable in Settings, except where a fixed rule is stated:
 
+- **Position cap (very important):** one symbol cannot exceed 10% of total account balance. It scales automatically with the balance. See [Position cap](#position-cap-very-important).
 - Daily loss stop.
 - Order cap, which may be set high (for example 50–100 orders per day).
 - Buy only with available buying power.
