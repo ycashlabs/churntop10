@@ -6,6 +6,9 @@ export interface Summary {
   clock: string;
   quoteSource: "recorded" | "robinhood";
   connected: boolean;
+  /** not_connected: no saved Robinhood sign-in. connected: account read worked. error: signed in, but the read failed. */
+  robinhoodStatus: "not_connected" | "connected" | "error";
+  robinhoodError?: string;
   robinhood: null | {
     maskedAccount: string;
     nickname: string;

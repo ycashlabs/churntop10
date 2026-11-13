@@ -318,6 +318,12 @@ app.get("/api/robinhood/pending", async (c) => {
   return c.json(row ? { pending: true, expiresAt: new Date(row.expires_at).toISOString(), redirectUri: LOOPBACK_REDIRECT_URI } : { pending: false, redirectUri: LOOPBACK_REDIRECT_URI });
 });
 
+app.post("/api/robinhood/disconnect", async (c) => {
+  const stepped = await requireStepUp(c);
+  if (stepped) return stepped;
+  return c.json(await callTrader(c, "disconnect"));
+});
+
 app.post("/api/robinhood/complete", async (c) => {
   const limited = await rateLimit(c, "rh-complete", 10);
   if (limited) return limited;
@@ -378,9 +384,10 @@ async function requireStepUp(c: AppContext): Promise<Response | undefined> {
   return undefined;
 }
 
-async function callTrader(c: AppContext, method: "summary" | "cycle" | "kill" | "resume" | "setMode" | "saveSettings" | "saveTop10", arg?: unknown): Promise<Summary> {
+async function callTrader(c: AppContext, method: "disconnect" | "summary" | "cycle" | "kill" | "resume" | "setMode" | "saveSettings" | "saveTop10", arg?: unknown): Promise<Summary> {
   const stub = trader(c) as unknown as AccountTrader;
   if (method === "summary") return stub.summary();
+  if (method === "disconnect") return stub.disconnect();
   if (method === "cycle") return stub.cycle();
   if (method === "kill") return stub.kill();
   if (method === "resume") return stub.resume();

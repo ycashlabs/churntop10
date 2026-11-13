@@ -136,7 +136,7 @@ export class AccountTrader extends DurableObject<Env> {
   }
 
   private async liveQuotes(): Promise<QuoteView[] | undefined> {
-    const token = await this.accessToken();
+    const token = await this.accessToken().catch(() => undefined);
     if (!token) return undefined;
     const symbols = (await this.env.DB.prepare("SELECT symbol FROM top10 ORDER BY rank").all<{ symbol: string }>()).results.map((row) => row.symbol);
     if (symbols.length === 0) return undefined;
@@ -370,7 +370,10 @@ export class AccountTrader extends DurableObject<Env> {
     const equity = this.equity(settings.cash, positions, book.quotes);
     const now = new Date();
     const parts = etParts(now);
+    this.robinhoodError = undefined;
     const robinhood = await this.robinhoodSnapshot();
+    const linked = !!(await this.env.DB.prepare("SELECT id FROM rh_tokens WHERE id = 1").first());
+    const robinhoodStatus: Summary["robinhoodStatus"] = robinhood ? "connected" : linked || this.robinhoodError ? "error" : "not_connected";
     return {
       mode: settings.mode,
       killed: settings.killed === 1,
@@ -379,6 +382,8 @@ export class AccountTrader extends DurableObject<Env> {
       clock: `${parts.date} ${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")} ET`,
       quoteSource: book.source,
       connected: robinhood !== null,
+      robinhoodStatus,
+      ...(robinhoodStatus === "error" ? { robinhoodError: this.robinhoodError ?? "Robinhood sign-in expired or was revoked. Connect again from Settings." } : {}),
       robinhood,
       simulator: {
         maskedAccount: maskAccountNumber(settings.account_number),
@@ -430,14 +435,34 @@ export class AccountTrader extends DurableObject<Env> {
     };
   }
 
+  private robinhoodError: string | undefined;
+
+  async disconnect(): Promise<Summary> {
+    await this.env.DB.prepare("DELETE FROM rh_tokens WHERE id = 1").run();
+    await this.env.DB.prepare("DELETE FROM oauth_state").run();
+    await this.audit("robinhood_disconnected", {});
+    return this.summary();
+  }
+
   private async robinhoodSnapshot(): Promise<Summary["robinhood"]> {
-    const token = await this.accessToken();
+    let token: string | undefined;
+    try {
+      token = await this.accessToken();
+    } catch {
+      // A saved sign-in that cannot be decrypted (for example after a key change) must not break the summary.
+      this.robinhoodError = "The saved Robinhood sign-in could not be read. Disconnect and connect again.";
+      await this.audit("robinhood_token_unreadable", {});
+      return null;
+    }
     if (!token) return null;
     try {
       assertOutgoing("get_accounts", {});
       const accountsPayload = await this.mcpCall(token, "get_accounts", {});
       const account = selectAgentic(parseAccounts(accountsPayload));
-      if (!account) return null;
+      if (!account) {
+        this.robinhoodError = "Robinhood is connected, but no agent trading account was found.";
+        return null;
+      }
       assertOutgoing("get_portfolio", { account_number: account.accountNumber });
       const portfolio = parsePortfolio(await this.mcpCall(token, "get_portfolio", { account_number: account.accountNumber }));
       assertOutgoing("get_realized_pnl", { account_number: account.rhsAccountNumber, span: "day" });
@@ -456,7 +481,9 @@ export class AccountTrader extends DurableObject<Env> {
         unsettled: displayField(account.unsettledFunds, "usd"),
       };
     } catch (error) {
-      await this.audit("robinhood_read_failed", { message: error instanceof Error ? error.message : "read failed" });
+      const message = error instanceof Error ? error.message : "read failed";
+      this.robinhoodError = `Robinhood is connected, but reading the account failed: ${message.slice(0, 160)}`;
+      await this.audit("robinhood_read_failed", { message });
       return null;
     }
   }
