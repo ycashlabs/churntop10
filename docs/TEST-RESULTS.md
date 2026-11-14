@@ -1,6 +1,6 @@
 # Conformance results — Churn Top 10
 
-Run at Nov 13, 2026, 2:12 PM America/Chicago against the current tree. Checks follow [TEST-PLAN.md](TEST-PLAN.md) and [DESIGN.md](DESIGN.md). Headless UI checks do not capture screenshots.
+Run at Nov 13, 2026, 7:47 PM America/Chicago against the current tree. Checks follow [TEST-PLAN.md](TEST-PLAN.md) and [DESIGN.md](DESIGN.md). Headless UI checks do not capture screenshots.
 
 Summary: **56 PASS**, **0 FAIL**, **9 NOT BUILT** (65 tests).
 
@@ -8,11 +8,11 @@ Summary: **56 PASS**, **0 FAIL**, **9 NOT BUILT** (65 tests).
 | --- | --- | --- | --- | --- |
 | S-01 | Schema | Fresh DB is migrations 0001–0007 in order, portable types | PASS |  |
 | S-02 | Schema | positions and trades have source default app (0004) | PASS |  |
-| S-03 | Schema | trade_signals has threshold (0005) on this branch / dev | PASS | 0005 exists in the repo. Applied and recorded on dev D1 at 8:12:02 AM CST (America/Chicago) and on prod D1 at 8:26:53 AM CST; PRAGMA shows threshold on both. |
+| S-03 | Schema | trade_signals has threshold (0005) on this branch / dev | PASS | 0005 exists in the repo. Applied and recorded on dev D1 at 8:12:02 AM CST (America/Chicago) and on prod D1 at 8:26:53 AM CST; PRAGMA shows threshold on both. Reconfirmed in d1_migrations before the PR #12 promotion. |
 | S-04 | Schema | v3 relationships: rules, versions, signals, positions, trades | PASS |  |
 | S-05 | Schema | app_settings seed columns include legacy pdt_limit and max_order_pct | PASS |  |
 | S-06 | Schema | trade_signals persists trade_id, signal_id, value, threshold, fired, name, and reason | PASS |  |
-| S-07 | Schema | trade_signals has name and reason (0006) on this branch / dev | PASS | 0006 exists in the repo. Applied and recorded on dev D1 at 8:39:59 AM CST (America/Chicago) and on prod D1 at 8:45:27 AM CST; PRAGMA shows name and reason on both. |
+| S-07 | Schema | trade_signals has name and reason (0006) on this branch / dev | PASS | 0006 exists in the repo. Applied and recorded on dev D1 at 8:39:59 AM CST (America/Chicago) and on prod D1 at 8:45:27 AM CST; PRAGMA shows name and reason on both. Reconfirmed in d1_migrations before the PR #12 promotion. |
 | S-08 | Schema | 0007 adds sessions auth_method/stepup_method, totp, and totp_backup_codes | PASS |  |
 | ST-01 | Settings | Defaults: profit/stop/daily loss 1%, order cap 100, capital 10000, view_only, not killed | PASS |  |
 | ST-02 | Settings | Percents: finite, > 0, ≤ 100; exact server messages from DESIGN §4 | PASS |  |
@@ -55,13 +55,13 @@ Summary: **56 PASS**, **0 FAIL**, **9 NOT BUILT** (65 tests).
 | H-07 | Holdings / live / simulator | Live proposeLiveEntries requires first-buy signals to fire before placing, matching the simulator | PASS |  |
 | H-06 | Holdings / live / simulator | Prod NVDA 7:55 fill has trade_signals rows | PASS | Owner approved the apply at 8:43 AM CST. After prod 0006 (8:45:27 AM CST) a dry-run with name and reason planned the same 6 rows for trades 3989afa2-7976-4b28-b703-4c5e0352a9a6 and 5aa49ca9-f1c4-4622-aef6-8e1f8f4a0359; apply=true inserted 6 (changes 1 each). Each trade has 3 rows including name and reason. A rerun planned 0 (alreadyHadSignals). |
 | V-01 | Review / Access / security | Review lists imported open holdings with exitType imported and the imported bot note | PASS | imported holding visible on Review |
-| A-01 | Review / Access / security | Access owner-only; Worker re-checks JWT when ACCESS_ENFORCE=1; no bypass or service token in repo config | PASS | Access apps Churn Top 10 prod and dev each have a single Owner only allow policy for tom2258@gmail.com. No exclude/require, no bypass or service token. Worker ACCESS_ENFORCE is 1 on both. |
+| A-01 | Review / Access / security | Access owner-only; Worker re-checks JWT when ACCESS_ENFORCE=1; no bypass or service token in repo config | PASS | Access apps Churn Top 10 prod and dev each have a single Owner only allow policy for tom2258@gmail.com. No exclude/require, no bypass or service token. Worker ACCESS_ENFORCE is 1 on both. No Access changes in this PR. |
 | A-02 | Review / Access / security | Passkey session 12 hours; step-up 5 minutes; Sell All and Edit capital are not step-up | PASS |  |
 | A-03 | Review / Access / security | submitGatedTool throws unless gate is 1; cancel/modify always refused | PASS |  |
 | A-04 | Review / Access / security | Account numbers masked to last 4; no eval / new Function in the Worker bundle | PASS |  |
-| A-05 | Review / Access / security | Unauthenticated prod and dev hosts 302 to Access | PASS | Unauthenticated GET / and /api/health on top10.ycashlabs.com and top10-dev.ycashlabs.com return HTTP 302 to dawn-rice-07a4.cloudflareaccess.com with kids b05d3bc5… (prod) and 3826fb97… (dev). Reconfirmed on prod at 8:45:38 AM CST after the PR #10 upload. |
-| A-06 | Review / Access / security | Dev and prod ALLOW_LIVE_TRADING is 0 | PASS | Worker settings: ALLOW_LIVE_TRADING is 0 on churntop10-prod and churntop10-dev. TOKEN_KEY present as secret_text on both. |
-| A-07 | Review / Access / security | Cron is */5 * * * * on both Workers; no assets binding | PASS | Both Workers cron */5 * * * *; no ASSETS binding on the deployed scripts (has_assets false). Confirmed again after the 8:40:47 AM CST dev upload and the 8:45:31 AM CST prod upload. |
+| A-05 | Review / Access / security | Unauthenticated prod and dev hosts 302 to Access | PASS | Unauthenticated GET / and /api/health on top10.ycashlabs.com and top10-dev.ycashlabs.com return HTTP 302 to dawn-rice-07a4.cloudflareaccess.com with kids b05d3bc5… (prod) and 3826fb97… (dev). Reconfirmed at 7:46:34 PM CST 13 Nov 2026 (America/Chicago) before the PR #12 promotion; prod still ran Worker 851a1db9-… (PR #11) and dev ran a066fe5b-… (PR #12). |
+| A-06 | Review / Access / security | Dev and prod ALLOW_LIVE_TRADING is 0 | PASS | Worker settings reconfirmed at 7:46 PM CST 13 Nov 2026: ALLOW_LIVE_TRADING is 0 on churntop10-prod and churntop10-dev. TOKEN_KEY is secret_text on both. AUTH_KEY is set on dev only (not yet on prod). EMAIL send_email (destination tom2258@gmail.com) is bound on dev only. |
+| A-07 | Review / Access / security | Cron is */5 * * * * on both Workers; no assets binding | PASS | Both Workers cron */5 * * * *; no ASSETS binding (has_assets false). Reconfirmed at 7:46 PM CST 13 Nov 2026: prod version 851a1db9-e7bd-4c52-972f-fc03a6a826d8 (PR #11), dev version a066fe5b-fbc7-4f02-ab31-372ae70e810b (PR #12). |
 | P-01 | Planned | AI-created Experimenting rules | NOT BUILT | Planned in DESIGN §9, not implemented. |
 | P-02 | Planned | AI approve/retire suggestions (user always decides) | NOT BUILT | Planned in DESIGN §9, not implemented. |
 | P-03 | Planned | Rule points 0–100 with 40/25/20/15 weights | NOT BUILT | Planned in DESIGN §9, not implemented. |
