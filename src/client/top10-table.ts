@@ -127,10 +127,22 @@ export function topSortValue(row: TopRow, key: string): string | number | null {
   return null;
 }
 
+/** 0 is flat. ±1..±5 step at 0.5%, 1%, 2%, and 3%. */
+export function heatLevel(changePct: number | null): number {
+  if (changePct == null || changePct === 0) return 0;
+  const mag = Math.abs(changePct);
+  let step = 1;
+  if (mag > 0.5) step = 2;
+  if (mag > 1) step = 3;
+  if (mag > 2) step = 4;
+  if (mag > 3) step = 5;
+  return changePct > 0 ? step : -step;
+}
+
 export function heatMix(changePct: number | null): { background: string; color: string } {
-  if (changePct == null || changePct === 0) return { background: "var(--surface-2)", color: "var(--ink)" };
-  const mag = Math.min(1, Math.abs(changePct) / 2);
-  const mix = Math.round(18 + mag * 62);
-  const base = changePct > 0 ? "var(--up)" : "var(--down)";
-  return { background: `color-mix(in srgb, ${base} ${mix}%, var(--surface-2))`, color: "var(--ink)" };
+  const level = heatLevel(changePct);
+  if (level === 0) return { background: "var(--heat-flat)", color: "var(--heat-flat-ink)" };
+  const side = level > 0 ? "pos" : "neg";
+  const step = Math.abs(level);
+  return { background: `var(--heat-${side}-${step})`, color: `var(--heat-${side}-${step}-ink)` };
 }

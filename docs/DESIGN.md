@@ -168,17 +168,43 @@ Sidebar links are 14px / 500 / line-height 1.28. The sign-in subtitle stays the 
 
 ### Color
 
-Light (default): `--bg #f1f3f5`, `--surface #ffffff`, `--surface-2 #f7f8f9`, `--ink #242a30`, `--muted #6b7280`, `--line #e5e7eb`, `--up #3a784f`, `--down #c2322b`, `--warning #8a6d1f`, `--accent #2f68cb`, `--stamp #9d2c2c`, `--good #1f6b45`.
+Light (default): `--bg #f1f3f5`, `--surface #ffffff`, `--surface-2 #f7f8f9`, `--ink #242a30`, `--muted #6b7280`, `--line #e5e7eb`, `--up #037b66`, `--down #d60a22`, `--flat #656e76`, `--warning #8a6d1f`, `--accent #2f68cb`, `--stamp #9d2c2c`, `--good #1f6b45`. Pill fills: `--up-bg #a3ddd2`, `--down-bg #fad0d5`, `--flat-bg #dde0e4`.
 
-Dark: `--bg #0e1114`, `--surface #181c21`, `--surface-2 #12161a`, `--ink #e8eaed`, `--muted #9aa0a6`, `--line #2a2f36`, `--up #5aa074`, `--down #e06a64`, `--warning #d4a017`, `--accent #6ea0e8`, `--stamp #e07070`, `--good #5aa074`.
+Dark: `--bg #0e1114`, `--surface #181c21`, `--surface-2 #12161a`, `--ink #e8eaed`, `--muted #9aa0a6`, `--line #2a2f36`, `--up #00aa76`, `--down #ff4143`, `--flat #c7cdd2`, `--warning #d4a017`, `--accent #6ea0e8`, `--stamp #e07070`, `--good #5aa074`. Pill fills: `--up-bg #014e40`, `--down-bg #952835`, `--flat-bg #363f44`.
 
-Spacing uses 2, 4, 8, 12, 16, 20, 24, 28, 32px. Table rows are 32px, headers 28px. Sidebar width is 200px and collapses below 982px. Auth card radius is 32px. Inputs and the account row are 12px. Sign-in buttons are pills (999px). In-app buttons are 8px. Focus ring is 2px `--accent`. Primary buttons are `--ink` fill with `--surface` text. Quiet buttons are transparent with a 1px `--ink` border. Danger (`Sell All Positions`, `Confirm sell all`) uses `--stamp`.
+Quote colors are the Yahoo Finance CSS tokens as of 14 November 2026. They color a signed figure only: price change, change percent, P&L, the day-change line and Today's P/L, Total P/L, best and worst position values on the strip, rule profit and worst loss, review P&L, and sparkline strokes. A zero uses `--flat` (`.flat` is not `--muted`). Change and Change % in the Top 10 table are pills on `--up-bg` / `--down-bg` / `--flat-bg`. Those Yahoo text colors pass WCAG AA 4.5:1 on the page surface (light text on white is about 5.2:1; dark text on `--surface` is about 5.0:1 or better) and fail on the tint, so pill text is `--ink` (about 9.5:1 on the light tints and about 6.6:1 on the dark tints). Heatmap fills and the ink chosen for each step are below. Buttons, badges, headings, the Live and Proven stamps (`--good`), and letter-mark tones keep their own colors. Win rate stays neutral because it is not a signed gain or loss. Account value, cash, and buying power stay `--ink`. A paused deploy line uses `--warning`, not `--down`.
+
+Heatmap scale, light then dark. Steps: null or 0 is neutral; above 0 through 0.5% is 1; through 1% is 2; through 2% is 3; through 3% is 4; above 3% is 5. Losses mirror that.
+
+| Step | Light fill | Light ink | Dark fill | Dark ink |
+| --- | --- | --- | --- | --- |
+| pos-5 | `#14a78e` | `#0e1114` | `#20c5a9` | `#0e1114` |
+| pos-4 | `#6bdfcc` | `#242a30` | `#037b66` | `#ffffff` |
+| pos-3 | `#a4e9de` | `#242a30` | `#026857` | `#e8eaed` |
+| pos-2 | `#c5f0e9` | `#242a30` | `#02594a` | `#e8eaed` |
+| pos-1 | `#dff5f2` | `#242a30` | `#01362d` | `#e8eaed` |
+| neutral | `#e1e5e9` | `#242a30` | `#3e464f` | `#e8eaed` |
+| neg-1 | `#fbdee2` | `#242a30` | `#6e0814` | `#e8eaed` |
+| neg-2 | `#fad0d4` | `#242a30` | `#8e0a17` | `#e8eaed` |
+| neg-3 | `#f2aab5` | `#242a30` | `#b20c20` | `#e8eaed` |
+| neg-4 | `#ed5063` | `#0e1114` | `#d60a23` | `#ffffff` |
+| neg-5 | `#de2339` | `#ffffff` | `#ed5063` | `#0e1114` |
+
+Each ink above is at least 4.5:1 on its fill. Page `--ink` fails on light neg-4 (about 4.1:1) and on the stronger dark steps, so those cells use near-black or white instead.
+
+Spacing uses 2, 4, 8, 12, 16, 20, 24, 28, 32px. Table rows are 32px, headers 28px. Sidebar width is 200px and collapses below 982px. Auth card radius is 32px. Text inputs, textareas, and selects are 36px tall with a 12px radius. Checkboxes and radios are 16px native controls (`accent-color: var(--accent)`) and are excluded from that field rule, so a checkbox sits immediately left of its label. The account row is 12px. Sign-in buttons are pills (999px). In-app buttons are 8px. Focus ring is 2px `--accent`. Primary buttons are `--ink` fill with `--surface` text. Quiet buttons are transparent with a 1px `--ink` border. Danger (`Sell All Positions`, `Confirm sell all`, `Disconnect Robinhood`, `Turn off authenticator app`) uses `--stamp`.
+
+### Settings cards
+
+Each Settings group is its own card: 1px `--line`, 12px radius, 16px padding, 12px gap, same tokens in light and dark. Headings are 16px / 700 with a small inlined icon: **Theme** (the existing fieldset legend), **Trading capital and caps**, **Mode**, **Robinhood**, **Authenticator app**, **Danger zone**. Helper text under a heading or control is 13px `--muted`. Quick-fill buttons are an equal wrapped grid inside the caps card, and the balance warning stays in that card. Save caps stays with the caps. Switch to Live / Switch to View Only and Allow new buys again stay in Mode. Sell All Positions, Disconnect Robinhood, and Turn off authenticator app sit in the Danger zone; their confirm and passkey handlers are unchanged. The SEC credit sentence is its own card and keeps the §6.4 words. Passkey create, sign-in, and recovery stay on the sign-in card. Settings does not manage passkeys.
+
+The same card chrome wraps the Top 10 symbol editor and splits Simulator “Rules to run” out of the stats card. Account Summary, Rules edit and history, Review, Orders, Latest check, and position panels were already cards.
 
 ### Icons
 
-Font Awesome Free 6.7.2 solid icons, inlined as SVG in the client bundle (`src/client/icons.tsx`). License text is `icons/LICENSE.txt` (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT; Copyright 2024 Fonticons, Inc.). Nothing is loaded from Font Awesome or any other host. `font-src` stays `'self'`. The embedded asset writer stores `.woff2` as base64 so the Inter file survives the Worker bundle. Used names: key, shield, mail, user, sun, moon, logout, table, grid, sliders, search, chevron, menu, close.
+Font Awesome Free 6.7.2 solid icons, inlined as SVG in the client bundle (`src/client/icons.tsx`). License text is `icons/LICENSE.txt` (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT; Copyright 2024 Fonticons, Inc.). Nothing is loaded from Font Awesome or any other host. `font-src` stays `'self'`. The embedded asset writer stores `.woff2` as base64 so the Inter file survives the Worker bundle. Used names: key, shield, mail, user, sun, moon, logout, table, grid, sliders, search, chevron, menu, close, lock, wallet, rightLeft, link, warning. Lock is the wider 448×512 glyph; link is 640×512. The others use the 512×512 box.
 
-Each ticker also has a first-party letter mark (`src/client/symbol.tsx`): an inline SVG, 22px, rounded rect, the symbol’s first letter in Inter. Eight tone classes (`tone-0` … `tone-7`) mix a fixed hue into `--surface-2`, and the letter uses `--ink`, so the same mark works in light and dark. No image host, no logo API, and no CSP change. `style-src` stays `'self'` (the mark uses classes, not a style attribute).
+Each ticker also has a first-party letter mark (`src/client/symbol.tsx`): an inline SVG, 22px, rounded rect, the symbol’s first letter in Inter. Eight tone classes (`tone-0` … `tone-7`) mix a fixed hue into `--surface-2`, and the letter uses `--ink`, so the same mark works in light and dark. Those hues are identity colors. They are not `--up` or `--down`. On a heatmap cell the symbol pill keeps `--ink` on `--surface`, and the company name uses the cell ink. No image host, no logo API, and no CSP change. `style-src` stays `'self'` (the mark uses classes, not a style attribute).
 
 ### Account strip
 
@@ -197,7 +223,9 @@ Refresh, without a new write path:
 
 ### Top 10 table
 
-Heading, help, **Symbols, one per line**, and **Save list** stay §6.4. The editor sits in a disclosure under the table. **Table View** / **Heatmap View** toggles the same rows. Heatmap color is the change percent. A symbol with no previous close is neutral and shows `—`.
+Heading, help, **Symbols, one per line**, and **Save list** stay §6.4. The editor sits in a bordered disclosure under the table. **Table View** / **Heatmap View** toggles the same rows. Heatmap color is the change percent on the five-step scale in [Color](#color). A symbol with no previous close is the neutral step and shows `—`.
+
+**Customize** is a compact popover anchored to the button, on Top 10 and on Rules. It is not a full-width grid. It lists every column, including Sector and Industry. Rows are about 30px, labels are 14px, and the checkbox is 16px immediately left of the label. Two columns while that stays compact; one column below 600px. It closes on Escape and on a pointer press outside the button and the panel. The button exposes `aria-expanded` and `aria-controls`. # and Symbol (Top 10) and Name and Actions (Rules) stay checked and disabled, with a lock icon and the accessible name Locked. Preference keys are unchanged.
 
 Columns (Customize can hide any except # and Symbol; preference `churntop10.top10.columns.v2`, so a list saved under the previous key does not hide Sector and Industry):
 
@@ -462,7 +490,7 @@ All strings below are **verbatim** from `src/client/App.tsx` and `SESSION_HELP` 
 - Table headers: `#`, `Symbol`, `Sector`, `Industry`, `Last`, `Bid`, `Ask`, `Change`, `Change %`, `Position`, `P&L`, `Target`, `Stop`, `Rule`, `Check`. The company name is not its own column; it sits under the symbol. `1D`, `Volume`, and `52 Week Range` are not columns.
 - Caption under the table, and again on Settings: `Company names, exchanges, and industries come from SEC public company data. Sector is the SIC division. A company with no SIC shows an em dash.`
 - View toggle: `Table View` · `Heatmap View`
-- Button: `Customize`
+- Button: `Customize`. Opens the popover described under [Top 10 table](#top-10-table). Locked columns show a lock icon and the accessible name `Locked`.
 - Label: `Symbols, one per line`
 - Button: `Save list`
 - Server validation: `Enter 1 to 10 unique letter symbols.`
@@ -471,6 +499,7 @@ All strings below are **verbatim** from `src/client/App.tsx` and `SESSION_HELP` 
 ### 6.5 Settings
 
 - Heading: `Settings`
+- Card headings: `Theme` (fieldset legend) · `Trading capital and caps` · `Mode` · `Robinhood` · `Authenticator app` · `Danger zone`. The SEC credit sentence from [§6.4](#64-top-10) is the body of its own card. Passkey and recovery stay on the sign-in card.
 - Theme fieldset legend: `Theme`. Options: `Light` · `Dark`. Help: `Light or Dark. The choice is saved in this browser.`
 - Help: `SESSION_HELP`
 - Labels: see [§4](#4-settings-catalog) (exact label text is in that table).
@@ -530,7 +559,7 @@ All strings below are **verbatim** from `src/client/App.tsx` and `SESSION_HELP` 
 - Heading: `Rules contract`
 - Help: `You edit the text; the app proofreads by saving a history entry for every change, status change, and approval. Only you can mark a rule Proven. Live trading uses only Proven rules. The Simulator can run any selected rules, including Experimenting ones. Editing a Proven rule creates a new Experimenting version; open trades keep the versions they started with.`
 - Per rule, in the table: name plus `v{version}`; stamp is the raw status (`experimenting`, `proven`, `retired`). The plain-English body is the name tooltip and the edit form.
-- Filter chips, verbatim: `All` · `Active` · `Proven` · `Experimenting` · `Suggest approval` · `Suggest retire` · `Top scorers` · `Losing money` · `Recently triggered`. The three points chips are disabled. Search placeholder: `Search`. Button: `Customize`.
+- Filter chips, verbatim: `All` · `Active` · `Proven` · `Experimenting` · `Suggest approval` · `Suggest retire` · `Top scorers` · `Losing money` · `Recently triggered`. The three points chips are disabled. Search placeholder: `Search`. Button: `Customize` (same popover; Name and Actions stay locked).
 - Meta: `Buy rule` or `Sell rule` · signal ids joined by `", "` or `Uses Settings percentages`
 - Scorecard: `No trades yet.` or `Win rate {n% or —}. Avg profit {$x.xx or —}. Worst loss {$x.xx or —}. {n} trades.`
 - Buttons: `Edit / rename` · `Mark Proven` · `Move to Experimenting` · `Retire` · `History`
@@ -1015,6 +1044,7 @@ Dates are America/Chicago unless noted. All of the following were agreed 13 Nove
 | 14 Nov 2026 | Look and feel (PR #15) uploaded to dev and prod after the owner said to push to production. Merge `82663699ba722b22110be5050e4d002ae69c0709` (tree identical to `edcb0b1ce714024bc9d2d0fef89f942c085fe1af`). Dev Worker **`04450417-9ab2-4f6b-8a83-0d6122e48075`** uploaded 7:58:22 AM CST (rollback `0ecc5067-…`, bookmark `000001d2-00000000-00005123-5b6087e6ea68e49e4f6b484115b5eef1`). Prod Worker **`001408dd-6587-4ba1-a499-41f8fb1b7e4f`** uploaded 8:05:02 AM CST (rollback `f568be0e-3a0f-49cd-9f6b-ae25789ba895`, bookmark `000001c2-00000000-00005123-f0ecd3c9aa6d20f4b100d19b85a8cd3d`, same bundle, deployment `8381c66b-4413-4335-851b-590f0b7153a9`). No migration, cron unchanged, gate `"0"`. See [HANDOVER.md](HANDOVER.md). |
 | 14 Nov 2026 | Recovery email sender moved off `noreply@ycashlabs.com` onto churncapital.com subdomains after an explicit go-ahead at 7:01 AM CST. From addresses are config-driven (`EMAIL_FROM`): dev `noreply@desk-dev.churncapital.com`, prod `noreply@desk.churncapital.com`, local `noreply@desk-dev.churncapital.com` (localhost still logs the link and does not send). The 15-minute recovery-link TTL is unchanged. Email Sending was onboarded for `desk.churncapital.com` (id `97bf52b3fced458f83e896afa90781bb`) and `desk-dev.churncapital.com` (id `1eeda3790f9546b1add78c2cd846ea0e`) at **7:03:10 AM CST**, adding only subdomain records: `cf-bounce.desk[.dev].churncapital.com` MX (`route1`/`route2`/`route3.mx.cloudflare.net`) and SPF (`v=spf1 include:_spf.mx.cloudflare.net ~all`), DKIM TXT at `cf-bounce._domainkey.desk[.dev].churncapital.com` (selector `cf-bounce`, so `d=desk[.dev].churncapital.com`), and `_dmarc.desk[.dev].churncapital.com` `v=DMARC1; p=reject;`. DNS status was `ready`. The `churncapital.com` apex iCloud+ records (MX `mx01`/`mx02.mail.icloud.com`, TXT `apple-domain=11ccpqOL0trL8Grc`, TXT `v=spf1 include:icloud.com ~all`, CNAME `sig1._domainkey`) were verified unchanged before and after via the zone DNS API and DoH. The apex itself had already been listed as an Email Sending domain since **6:59:34 AM CST** (id `cc2e89dc45ac49798f057a717fc08399`, return-path `cf-bounce.churncapital.com`, plus apex `_dmarc` `v=DMARC1; p=reject;`); this change did not alter or remove that earlier onboarding or those records. The `send_email` binding still only restricts the destination to `tom2258@gmail.com` (no sender restriction). `ZONE` remains `ycashlabs.com` as a fallback if `EMAIL_FROM` is unset. Dev Worker **`0ecc5067-a5ea-4efb-8d8e-89a197d2e945`** uploaded 7:06:43 AM CST (rollback `840beac0-…`). The owner confirmed the dev recovery email arrived and works at **7:11 AM CST**. Prod Worker **`f568be0e-3a0f-49cd-9f6b-ae25789ba895`** uploaded 7:11:48 AM CST after that confirmation (rollback `84d3fd56-e977-48bc-8ee7-50fcf610a549`, Time Travel bookmark `000001b7-00000004-00005123-e8b28e396fe85c0570671553d6010a71`, same bundle as current dev). The prod recovery send was not triggered here (Access); the owner can test it. Apex iCloud+ records were unchanged after the prod upload. The live gate stayed `"0"`. See [HANDOVER.md](HANDOVER.md). |
 | 14 Nov 2026 | SEC company names, sector, and industry from the public company files only ([§8.6](#86-sec-company-names-sector-and-industry)). Migration `0008_companies.sql` adds `companies` keyed by CIK and the one-row `sec_sync` clock. The exchange file is fetched at most daily, submissions at most weekly, and only for tickers the app shows (at most 40). Steady-state D1 writes are 1 per day; the weekly SIC refresh adds one write per shown company on that one tick. `SEC_USER_AGENT` defaults to `churntop10 tom@churncapital.com`. A failed SEC read does not fail the cron or the table. No logo API, no Nasdaq host, no CSP change, no trading or auth change. `ALLOW_LIVE_TRADING` stays `"0"`. Not deployed, and `0008` is not applied on dev or prod. The Companies registry and Company Profile screen are still not built. |
+| 14 Nov 2026 | Visual only. The Customize chooser is a compact popover (Sector and Industry included). Checkboxes and radios are 16px and are no longer stretched by the text-field rule. Quote up/down/flat colors match the Yahoo Finance tokens of this date, including the heatmap scale; `--good`, buttons, badges, headings, and letter-mark hues stay. Settings groups are cards, with destructive actions in a Danger zone. No trading, auth, cron, or env change. `ALLOW_LIVE_TRADING` stays `"0"`. Not deployed. |
 
 ---
 

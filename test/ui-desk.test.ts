@@ -20,7 +20,7 @@ import {
 } from "../src/client/strip.js";
 import { columnVisibility, compareValues, nextSort, sortRows } from "../src/client/table-sort.js";
 import { DISABLED_RULE_FILTERS, filterRules, RULE_FILTERS, ruleFilterEnabled } from "../src/client/rules-table.js";
-import { buildTopRows, exitDistances, parseUsd } from "../src/client/top10-table.js";
+import { buildTopRows, exitDistances, heatLevel, heatMix, parseUsd } from "../src/client/top10-table.js";
 import type { PositionView, RuleView, SimulatorView, Summary } from "../src/lib/api-types.js";
 
 function memory(): ThemeStorage & { bag: Map<string, string> } {
@@ -307,9 +307,57 @@ describe("top 10 rows", () => {
     expect(row?.name).toBe("");
     expect(row?.sector).toBe("—");
     expect(row?.industry).toBe("—");
+    expect(heatLevel(null)).toBe(0);
+    expect(heatLevel(0)).toBe(0);
+    expect(heatLevel(0.5)).toBe(1);
+    expect(heatLevel(0.51)).toBe(2);
+    expect(heatLevel(1)).toBe(2);
+    expect(heatLevel(1.01)).toBe(3);
+    expect(heatLevel(2)).toBe(3);
+    expect(heatLevel(2.01)).toBe(4);
+    expect(heatLevel(3)).toBe(4);
+    expect(heatLevel(3.01)).toBe(5);
+    expect(heatLevel(-3.5)).toBe(-5);
+    expect(heatMix(3.44).background).toBe("var(--heat-pos-5)");
+    expect(heatMix(-0.2).background).toBe("var(--heat-neg-1)");
+    expect(heatMix(0).color).toBe("var(--heat-flat-ink)");
     const distances = exitDistances(226.4, 224.1, 1, 1);
     expect(distances?.targetPrice).toBeCloseTo(224.1 * 1.01, 4);
     expect(distances?.stopPrice).toBeCloseTo(224.1 * 0.99, 4);
+  });
+});
+
+describe("desk visuals", () => {
+  const css = readFileSync(new URL("../src/client/styles.css", import.meta.url), "utf8");
+  const app = readFileSync(new URL("../src/client/App.tsx", import.meta.url), "utf8");
+  const chrome = readFileSync(new URL("../src/client/chrome.tsx", import.meta.url), "utf8");
+
+  it("keeps quote colors on the Yahoo tokens and leaves stamps on --good", () => {
+    expect(css).toContain("--up: #037b66;");
+    expect(css).toContain("--down: #d60a22;");
+    expect(css).toContain("--flat: #656e76;");
+    expect(css).toContain("--up: #00aa76;");
+    expect(css).toContain("--down: #ff4143;");
+    expect(css).toContain("--flat: #c7cdd2;");
+    expect(css).toContain("--good: #1f6b45;");
+    expect(css).toContain("--good: #5aa074;");
+    expect(css).toContain(".flat { color: var(--flat); }");
+    expect(css).toContain("--heat-pos-5: #14a78e;");
+    expect(css).toContain("--heat-neg-5: #ed5063;");
+    expect(css).not.toMatch(/input, textarea, select \{/);
+    expect(css).toContain('input:not([type="checkbox"]):not([type="radio"])');
+    expect(css).toContain("width: 16px; height: 16px;");
+  });
+
+  it("anchors Customize as a popover that still lists Sector and Industry", () => {
+    expect(chrome).toContain('aria-expanded={open}');
+    expect(chrome).toContain('aria-label="Customize columns"');
+    expect(chrome).toContain('event.key !== "Escape"');
+    expect(chrome).toContain("Locked");
+    expect(app).toContain('{ id: "sector", label: "Sector" }');
+    expect(app).toContain('{ id: "industry", label: "Industry" }');
+    expect(app).toContain("<ColumnMenu");
+    expect(app).not.toContain("ColumnPanel");
   });
 });
 
