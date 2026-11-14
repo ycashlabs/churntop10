@@ -4,12 +4,12 @@ The product contract is [docs/spec-v2.md](docs/spec-v2.md) (including the v3 sec
 
 This repository does not create Cloudflare resources and does not deploy. `npm run build` writes `dist/index.js`, an ES module Worker (`AccountTrader` is a named export, the default export is `fetch` + `scheduled`) with the built HTML, JS, and CSS embedded. The Worker serves that UI itself, so a deploy does not need a successful Workers assets-upload JWT. `dist/assets/` is still produced for local `wrangler dev` and as a fallback.
 
-Account `f59b2545f5783d93b378006f3eb10bb4`, zone `ycashlabs.com`.
+Account `f59b2545f5783d93b378006f3eb10bb4`. Zones `churncapital.com` (canonical desk hosts) and `ycashlabs.com` (aliases and Email Sending).
 
 | | dev | prod |
 | --- | --- | --- |
 | Worker | `churntop10-dev` | `churntop10-prod` |
-| Hostname | `top10-dev.ycashlabs.com` | `top10.ycashlabs.com` |
+| Hostname | `desk-dev.churncapital.com` (canonical); `top10-dev.ycashlabs.com` still attached | `top10.ycashlabs.com` (prod cutover to `desk.churncapital.com` needs go-ahead) |
 | D1 name | `churntop10-dev` | `churntop10-prod` |
 | R2 bucket | `churntop10-audit-dev` | `churntop10-audit-prod` |
 
@@ -58,7 +58,7 @@ Send that through the same D1 query API, against database `7f0a12d3-f689-4a86-b3
 
 The other option is to make `migrations/0001_init.sql` idempotent first: change each `CREATE TABLE` to `CREATE TABLE IF NOT EXISTS`. A later remote apply then succeeds on the existing tables and inserts the `0001_init.sql` row itself. Do that before the apply. Do not do both a hand-inserted row and an edit that you also expect Wrangler to execute. One path is enough.
 
-Dev is served by a Workers Custom Domain: `top10-dev.ycashlabs.com` points at Worker `churntop10-dev`. There is no zone route for that hostname. `env.dev` records it as `{ "pattern": "top10-dev.ycashlabs.com", "custom_domain": true }`. Do not also add a zone route for it.
+Dev is served by Workers Custom Domains, not zone routes. The canonical name `desk-dev.churncapital.com` and the previous name `top10-dev.ycashlabs.com` both point at Worker `churntop10-dev`. `env.dev` records both as `{ "pattern": "…", "custom_domain": true }`. Do not also add a zone route for either hostname.
 
 Prod is served the same way: `top10.ycashlabs.com` is a Workers Custom Domain on Worker `churntop10-prod`. `env.prod` records it as `{ "pattern": "top10.ycashlabs.com", "custom_domain": true }`. Do not add a zone route for it. A zone route would only be needed for a different design:
 
@@ -70,7 +70,7 @@ curl -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/workers/routes
 
 ## Bindings
 
-The Worker reads these names. Dev values are shown. Prod swaps the names in the table above and sets `ENVIRONMENT` to `prod`, `HOSTNAME` to `top10.ycashlabs.com`, and `ACCESS_ENFORCE` to `1`.
+The Worker reads these names. Dev values are shown. Prod swaps the names in the table above and sets `ENVIRONMENT` to `prod`, `HOSTNAME` to `top10.ycashlabs.com`, `ALLOWED_HOSTS` to empty, and `ACCESS_ENFORCE` to `1`. A later prod cutover changes `HOSTNAME` to `desk.churncapital.com` and sets `ALLOWED_HOSTS` to `top10.ycashlabs.com` while both names are live.
 
 | Binding | API `type` | Name | Value |
 | --- | --- | --- | --- |
@@ -85,7 +85,9 @@ The Worker reads these names. Dev values are shown. Prod swaps the names in the 
 | Var | `plain_text` | `ACCESS_AUD` | dev `3826fb9770402e73a472a3e3519bcdbd4cdcbf79cc695141d3ffb9cdd8a2cdaa` |
 | Var | `plain_text` | `OWNER_EMAIL` | `tom2258@gmail.com` |
 | Var | `plain_text` | `ZONE` | `ycashlabs.com` |
-| Var | `plain_text` | `HOSTNAME` | `top10-dev.ycashlabs.com` |
+| Var | `plain_text` | `HOSTNAME` | `desk-dev.churncapital.com` |
+| Var | `plain_text` | `ALLOWED_HOSTS` | `top10-dev.ycashlabs.com` (comma-separated aliases; empty on prod until cutover) |
+| Var | `plain_text` | `TOTP_ISSUER` | `churntop10 Dev` (prod `churntop10`; local `churntop10 Local`) |
 
 Secret, not a var. Set it with the secrets API and never in the script upload:
 

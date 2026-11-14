@@ -2,11 +2,17 @@
 
 Deployed from `cursor/churntop10-app-b73d`. Prod is separate; see `docs/prod.md`. Nothing in this note is a secret value.
 
-- Worker `churntop10-dev` at https://top10-dev.ycashlabs.com. Workers Custom Domain, not a zone route. View Only. `ACCESS_ENFORCE` is `1`. `ALLOW_LIVE_TRADING` is `0`. Cron is `*/5 * * * *`.
+- Worker `churntop10-dev` at https://desk-dev.churncapital.com (canonical Workers Custom Domain on zone `churncapital.com`). https://top10-dev.ycashlabs.com stays attached during the move. View Only. `ACCESS_ENFORCE` is `1`. `ALLOW_LIVE_TRADING` is `0`. Cron is `*/5 * * * *`. `HOSTNAME` is `desk-dev.churncapital.com`. `ALLOWED_HOSTS` is `top10-dev.ycashlabs.com`. `ZONE` stays `ycashlabs.com`.
 - D1 `churntop10-dev`, id `7f0a12d3-f689-4a86-b30d-b349bdd77736`. `migrations/0001_init.sql` was applied with the D1 query API, so `d1_migrations` does not yet list it. See `DEPLOY.md` before the first remote `wrangler d1 migrations apply`.
 - R2 bucket `churntop10-audit-dev`.
 - Access application `Churn Top 10 dev` on team `dawn-rice-07a4`. Audience `3826fb9770402e73a472a3e3519bcdbd4cdcbf79cc695141d3ffb9cdd8a2cdaa`. Allow policy is the owner only: `tom2258@gmail.com`.
 - Secret `TOKEN_KEY` is set on the Worker. The value is not in the repo.
+
+## Current dev (desk-dev hostname, 14 November 2026, America/Chicago)
+
+Canonical URL https://desk-dev.churncapital.com. The previous URL https://top10-dev.ycashlabs.com remains a Workers Custom Domain on the same Worker. Access application `Churn Top 10 dev` (`d0a5f257-6f03-4bfc-b8a4-d104a7180e06`) protects both names, owner-only, same audience as before. Passkeys are tied to the request hostname, so register a new passkey on desk-dev and re-add the authenticator app there. See [HANDOVER.md](HANDOVER.md) for the Worker version after this upload. **Not on prod.** Prod stays at https://top10.ycashlabs.com until an explicit go-ahead.
+
+The sections below are earlier snapshots and still mention the old hostname.
 
 ## Connecting Robinhood
 

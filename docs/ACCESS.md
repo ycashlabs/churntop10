@@ -4,7 +4,7 @@ The deployed app is one owner: `tom2258@gmail.com`. Access is the front door. Th
 
 ## Application
 
-Dev is already in front of Access. The application is `Churn Top 10 dev` on team `dawn-rice-07a4`, hostname `top10-dev.ycashlabs.com`, audience `3826fb9770402e73a472a3e3519bcdbd4cdcbf79cc695141d3ffb9cdd8a2cdaa`. The policy allows `tom2258@gmail.com` only. See `docs/dev.md`.
+Dev is already in front of Access. The application is `Churn Top 10 dev` (`d0a5f257-6f03-4bfc-b8a4-d104a7180e06`) on team `dawn-rice-07a4`, hostnames `desk-dev.churncapital.com` (canonical) and `top10-dev.ycashlabs.com` (still attached during the move), audience `3826fb9770402e73a472a3e3519bcdbd4cdcbf79cc695141d3ffb9cdd8a2cdaa`. The policy allows `tom2258@gmail.com` only. See `docs/dev.md`.
 
 Prod is in front of its own application: `Churn Top 10 prod` on team `dawn-rice-07a4`, hostname `top10.ycashlabs.com`, audience `b05d3bc57044f2fd02b7e9666d7e61a18e236784bdcbda9ea8322b9d6fe14517`, same owner-only policy and 1h session as dev. Never reuse one environment's audience in the other.
 

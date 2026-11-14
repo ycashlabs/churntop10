@@ -9,7 +9,10 @@ import {
   normalizeBackupCode,
   otpauthUri,
   timeStep,
+  totpAccount,
   totpAt,
+  totpIssuer,
+  totpLabel,
   totpStepUpGate,
   verifyTotp,
 } from "../src/lib/totp.js";
@@ -92,6 +95,21 @@ describe("otpauth and backup codes", () => {
     expect(uri).toContain("algorithm=SHA1");
     expect(uri).toContain("digits=6");
     expect(uri).toContain("period=30");
+  });
+
+  it("builds distinct issuer and label from TOTP_ISSUER and HOSTNAME", () => {
+    const dev = { TOTP_ISSUER: "churntop10 Dev", HOSTNAME: "desk-dev.churncapital.com" };
+    const prod = { TOTP_ISSUER: "churntop10", HOSTNAME: "top10.ycashlabs.com" };
+    const email = "tom2258@gmail.com";
+    expect(totpIssuer(dev)).toBe("churntop10 Dev");
+    expect(totpAccount(dev, email)).toBe("tom2258@gmail.com (desk-dev.churncapital.com)");
+    expect(totpLabel(dev, email)).toBe("churntop10 Dev:tom2258@gmail.com (desk-dev.churncapital.com)");
+    expect(totpIssuer(prod)).toBe("churntop10");
+    expect(totpAccount(prod, email)).toBe("tom2258@gmail.com (top10.ycashlabs.com)");
+    expect(totpLabel(prod, email)).toBe("churntop10:tom2258@gmail.com (top10.ycashlabs.com)");
+    const uri = otpauthUri({ issuer: totpIssuer(dev), account: totpAccount(dev, email), secret: "JBSWY3DPEHPK3PXP" });
+    expect(uri.startsWith("otpauth://totp/churntop10%20Dev:tom2258%40gmail.com%20(desk-dev.churncapital.com)?")).toBe(true);
+    expect(uri).toContain("issuer=churntop10+Dev");
   });
 
   it("round-trips base32 and issues eight formatted one-time backup codes", () => {

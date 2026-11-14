@@ -1,19 +1,14 @@
-# PENDING — do not add this to .github/workflows/ until a GitHub credential
-# with the `workflow` scope can push workflow files.
+# OPTIONAL extra job — the existing CI `test` job already checks out with
+# fetch-depth: 0 (14 November 2026) so `npm test` / check-design can resolve
+# merge-base on push. This file is only the sketched dedicated `design` job.
 #
-# Why this file is not live: a push of `.github/workflows/ci.yml` on
-# 13 November 2026 was rejected:
+# A push of `.github/workflows/ci.yml` on 13 November 2026 was rejected:
 #   "refusing to allow an OAuth App to create or update workflow
 #    `.github/workflows/ci.yml` without `workflow` scope"
 #
-# Until that scope is available, `npm test` (already run by the existing CI
-# job) runs `node scripts/check-design.mjs` first. The script tries to deepen
-# the fetch when GITHUB_ACTIONS=true. A shallow checkout can still miss the
-# merge-base; this pending job is the reliable version (fetch-depth: 0).
-#
-# To activate: copy the `design` job below into .github/workflows/ci.yml and
-# push with a token that has the `workflow` scope. Do not replace the existing
-# `test` job.
+# To add this as a separate job: copy the `design` job below into
+# .github/workflows/ci.yml and push with a token that has the `workflow`
+# scope. Do not replace the existing `test` job.
 #
 # name: ci
 # on: { push, pull_request }

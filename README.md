@@ -1,6 +1,6 @@
 # Churn Top 10
 
-A single-owner trading app. It reads the real Robinhood account through the Trading MCP. Fake-money trading lives on a separate Simulator screen. Live real-money trading stays off until you explicitly approve it (`ALLOW_LIVE_TRADING` is `0`).
+A single-owner trading app ([churndev/churntop10](https://github.com/churndev/churntop10)). It reads the real Robinhood account through the Trading MCP. Fake-money trading lives on a separate Simulator screen. Live real-money trading stays off until you explicitly approve it (`ALLOW_LIVE_TRADING` is `0`).
 
 Six screens: Account Summary (real Robinhood account only), Top 10, Rules, Simulator, Review, and Settings. Settings holds Trading capital (a fixed dollar amount, with 10% quick-fills of the current balance), the profit target and stop-loss (defaults for new positions, both percent of average cost), the daily loss stop (a percent of Trading capital), the daily order cap, the Live / View Only switch, and Sell All Positions. There are no buy amount fields; sizing is the 20% starter (2% of the position’s Trading capital snapshot), signal-sized adds, and a 10% per-symbol cap on that snapshot. The PDT day-trade cap is removed.
 
@@ -30,7 +30,7 @@ npm run check:html
 npm run check:bundle
 ```
 
-CI already runs lint, typecheck, test, build, and check:html. `npm test` starts with `node scripts/check-design.mjs`, which fails if `src/`, `migrations/`, or wrangler config change without `docs/DESIGN.md`, or if ops/env files change without `docs/HANDOVER.md`. A dedicated Actions job with a full git history is in [docs/ci-design-job.pending.yml](docs/ci-design-job.pending.yml) and needs a GitHub token with the `workflow` scope before it can be added to `.github/workflows/`.
+CI already runs lint, typecheck, test, build, and check:html. `npm test` starts with `node scripts/check-design.mjs`, which fails if `src/`, `migrations/`, or wrangler config change without `docs/DESIGN.md`, or if ops/env files change without `docs/HANDOVER.md`. The Actions `test` job checks out with `fetch-depth: 0` so that design check can see full history on push. A separate dedicated design job remains sketched in [docs/ci-design-job.pending.yml](docs/ci-design-job.pending.yml).
 
 ## Layout
 

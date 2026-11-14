@@ -1,6 +1,10 @@
 {
   "name": "churntop10",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/churndev/churntop10.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "npm run build:client && wrangler d1 migrations apply DB --local && wrangler dev --port 8787 --ip 127.0.0.1",

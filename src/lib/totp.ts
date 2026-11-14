@@ -112,6 +112,25 @@ export async function verifyTotp(
   return { ok: true, step: matched };
 }
 
+export type TotpUriConfig = {
+  TOTP_ISSUER: string;
+  HOSTNAME?: string;
+};
+
+export function totpIssuer(env: TotpUriConfig): string {
+  return env.TOTP_ISSUER.trim();
+}
+
+export function totpAccount(env: TotpUriConfig, email: string): string {
+  const account = email.trim().toLowerCase();
+  const host = (env.HOSTNAME ?? "").trim();
+  return host ? `${account} (${host})` : account;
+}
+
+export function totpLabel(env: TotpUriConfig, email: string): string {
+  return `${totpIssuer(env)}:${totpAccount(env, email)}`;
+}
+
 export function otpauthUri(input: { issuer: string; account: string; secret: string }): string {
   const issuer = encodeURIComponent(input.issuer);
   const account = encodeURIComponent(input.account);
