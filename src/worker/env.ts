@@ -10,6 +10,7 @@ export interface Env {
   ACCESS_AUD: string;
   OWNER_EMAIL: string;
   ZONE: string;
+  EMAIL_FROM: string;
   HOSTNAME: string;
   ALLOWED_HOSTS?: string;
   TOTP_ISSUER: string;

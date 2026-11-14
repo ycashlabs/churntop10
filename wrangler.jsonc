@@ -47,6 +47,7 @@
     "ACCESS_AUD": "",
     "OWNER_EMAIL": "tom2258@gmail.com",
     "ZONE": "ycashlabs.com",
+    "EMAIL_FROM": "noreply@desk-dev.churncapital.com",
     "HOSTNAME": "top10-dev.ycashlabs.com",
     "ALLOWED_HOSTS": "",
     "TOTP_ISSUER": "churntop10 Local"
@@ -81,6 +82,7 @@
         "ACCESS_AUD": "3826fb9770402e73a472a3e3519bcdbd4cdcbf79cc695141d3ffb9cdd8a2cdaa",
         "OWNER_EMAIL": "tom2258@gmail.com",
         "ZONE": "ycashlabs.com",
+        "EMAIL_FROM": "noreply@desk-dev.churncapital.com",
         "HOSTNAME": "desk-dev.churncapital.com",
         "ALLOWED_HOSTS": "top10-dev.ycashlabs.com",
         "TOTP_ISSUER": "churntop10 Dev"
@@ -115,6 +117,7 @@
         "ACCESS_AUD": "b05d3bc57044f2fd02b7e9666d7e61a18e236784bdcbda9ea8322b9d6fe14517",
         "OWNER_EMAIL": "tom2258@gmail.com",
         "ZONE": "ycashlabs.com",
+        "EMAIL_FROM": "noreply@desk.churncapital.com",
         "HOSTNAME": "desk.churncapital.com",
         "ALLOWED_HOSTS": "top10.ycashlabs.com",
         "TOTP_ISSUER": "churntop10"
