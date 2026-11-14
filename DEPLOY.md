@@ -86,7 +86,7 @@ The Worker reads these names. Dev values are shown. Prod sets `ENVIRONMENT` to `
 | Var | `plain_text` | `OWNER_EMAIL` | `tom2258@gmail.com` |
 | Var | `plain_text` | `ZONE` | `ycashlabs.com` |
 | Var | `plain_text` | `HOSTNAME` | `desk-dev.churncapital.com` |
-| Var | `plain_text` | `ALLOWED_HOSTS` | `top10-dev.ycashlabs.com` (comma-separated aliases; empty on prod until cutover) |
+| Var | `plain_text` | `ALLOWED_HOSTS` | `top10-dev.ycashlabs.com` on dev; `top10.ycashlabs.com` on prod (comma-separated aliases) |
 | Var | `plain_text` | `TOTP_ISSUER` | `churntop10 Dev` (prod `churntop10`; local `churntop10 Local`) |
 
 Secret, not a var. Set it with the secrets API and never in the script upload:
