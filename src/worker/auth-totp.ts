@@ -1,4 +1,4 @@
-import { applyTotpAttempt, base32Decode, isTotpLocked, otpauthUri, verifyTotp, type TotpLockState } from "../lib/totp.js";
+import { applyTotpAttempt, base32Decode, isTotpLocked, otpauthUri, totpAccount, totpIssuer, verifyTotp, type TotpLockState, type TotpUriConfig } from "../lib/totp.js";
 import { decryptString, importAuthKey, sha256Hex } from "./crypto.js";
 import type { Env } from "./env.js";
 import { recoveryOrigin } from "../lib/hosts.js";
@@ -125,8 +125,8 @@ export async function sendRecoveryEmail(env: Env, url: URL, token: string): Prom
   }
 }
 
-export function ownerOtpauth(email: string, setupKey: string): string {
-  return otpauthUri({ issuer: "Churn Top 10", account: email, secret: setupKey });
+export function ownerOtpauth(env: TotpUriConfig, email: string, setupKey: string): string {
+  return otpauthUri({ issuer: totpIssuer(env), account: totpAccount(env, email), secret: setupKey });
 }
 
 export { applyTotpAttempt };

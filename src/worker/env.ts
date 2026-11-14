@@ -12,6 +12,7 @@ export interface Env {
   ZONE: string;
   HOSTNAME: string;
   ALLOWED_HOSTS?: string;
+  TOTP_ISSUER: string;
   TOKEN_KEY?: string;
   AUTH_KEY?: string;
   EMAIL?: SendEmail;

@@ -6,7 +6,7 @@ Nothing in this note is a secret value. Never paste `TOKEN_KEY`, OAuth tokens, o
 
 Read [DESIGN.md](DESIGN.md) in full first, then this file. Safety rules are in [../AGENTS.md](../AGENTS.md).
 
-Last updated: 14 November 2026, 3:32 AM CST, America/Chicago.
+Last updated: 14 November 2026, 4:17 AM CST, America/Chicago.
 
 ## Owner and approval
 
@@ -21,6 +21,8 @@ Last updated: 14 November 2026, 3:32 AM CST, America/Chicago.
 ## Environments and resource ids
 
 Cloudflare account `f59b2545f5783d93b378006f3eb10bb4`. Zones `churncapital.com` (`f09ccbd7eefc0bba88ac60412282313b`) and `ycashlabs.com` (`66b09838eac0a3ca85925d0eccbb8da9`). Access team `dawn-rice-07a4`. Cron on both Workers: `*/5 * * * *`. Durable Object `AccountTrader`, idFromName `"owner"`, namespace id (prod) `5c0d19fe80334705a5e6c730b07ecb91`.
+
+The `churncapital.com` apex is the owner's **iCloud+ custom-domain mailbox**. Current DNS (do **not** modify or remove): MX `mx01.mail.icloud.com` and `mx02.mail.icloud.com` (priority 10), TXT `apple-domain=11ccpqOL0trL8Grc`, TXT `v=spf1 include:icloud.com ~all`, and CNAME `sig1._domainkey.churncapital.com` → `sig1.dkim.churncapital.com.at.icloudmailadmin.com`. App hosts on this zone are `desk` / `desk-dev` only (Workers Custom Domains). Recovery email still sends from `noreply@ycashlabs.com` (`ZONE` stays `ycashlabs.com`).
 
 | | Dev | Prod |
 | --- | --- | --- |
@@ -42,6 +44,7 @@ Cloudflare account `f59b2545f5783d93b378006f3eb10bb4`. Zones `churncapital.com` 
 | `HOSTNAME` | `desk-dev.churncapital.com` (recovery links use `https://$HOSTNAME`) | `top10.ycashlabs.com` until the prod cutover |
 | `ALLOWED_HOSTS` | `top10-dev.ycashlabs.com` (comma-separated aliases still served by this Worker) | empty until the prod cutover, then `top10.ycashlabs.com` while both names are live |
 | `ZONE` | `ycashlabs.com` (From address `noreply@ycashlabs.com`; Email Sending stays on this zone) | same |
+| `TOTP_ISSUER` | `churntop10 Dev`. The `otpauth` label is `churntop10 Dev:tom2258@gmail.com (desk-dev.churncapital.com)`. | `churntop10` in wrangler `env.prod` (not deployed with this change). The `otpauth` label will be `churntop10:tom2258@gmail.com (top10.ycashlabs.com)` when that config is later uploaded. Existing authenticator entries keep the old identical name until the owner sets up again. |
 
 Local: `npm run dev` on http://localhost:8787, `ACCESS_ENFORCE=0`, `ALLOW_LIVE_TRADING=0`. Never upload the top-level local config.
 
@@ -116,7 +119,7 @@ Redirect is loopback `http://127.0.0.1:47621/callback` only. Do this on **prod**
 
 ### Open work / pending owner decisions
 
-- [PR #13](https://github.com/ycashlabs/churntop10/pull/13) moves dev onto https://desk-dev.churncapital.com (Worker `b0794cc1-411f-4586-82f3-e965fa943699`). It is **on dev**, not merged, and must not be promoted to prod until the owner gives an explicit go-ahead.
+- [PR #13](https://github.com/ycashlabs/churntop10/pull/13) moves dev onto https://desk-dev.churncapital.com (Worker `b0794cc1-411f-4586-82f3-e965fa943699`) and gives dev and prod distinct authenticator-app names via `TOTP_ISSUER` plus `HOSTNAME`. It is **on dev**, not merged, and must not be promoted to prod until the owner gives an explicit go-ahead. After this upload, set up the authenticator again on desk-dev so the app shows issuer `churntop10 Dev` and label `churntop10 Dev:tom2258@gmail.com (desk-dev.churncapital.com)`.
 - [PR #12](https://github.com/ycashlabs/churntop10/pull/12) is **merged and on prod**. No further prod promotion is pending for it. The live gate stays `"0"`.
 - **`cursor/spec-v2`**: deleted from the remote at **4:07 PM CST** 13 Nov 2026 at the owner's request. Closed unmerged [PR #6](https://github.com/ycashlabs/churntop10/pull/6) still holds the three docs commits (`dbbf4c8`, `b9d7e6d`, `88920a5`).
 - **Cloudflare Email Sending**: onboarded for `ycashlabs.com` (DNS verified **8:29 PM CST** 13 Nov 2026). The owner triggered one recovery email on **dev** at **8:35:07 PM CST** and confirmed it arrived in Gmail at **8:36 PM CST** with no errors. Prod shares the same Worker script; no recovery was sent on prod. See the `EMAIL` row above for the DNS records and the strict-SPF / DKIM alignment note. Email Sending list APIs still return 403/404 (this connection lacks Email Sending scopes).

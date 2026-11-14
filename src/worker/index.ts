@@ -271,7 +271,7 @@ app.post("/api/auth/totp/begin", async (c) => {
   const key = await importAuthKey(c.env.AUTH_KEY);
   const packed = await encryptString(key, setupKey);
   await c.env.DB.prepare("INSERT INTO challenges (id, kind, challenge, expires_at) VALUES (?, 'totp_enroll', ?, ?) ON CONFLICT(id) DO UPDATE SET challenge = excluded.challenge, expires_at = excluded.expires_at, kind = 'totp_enroll'").bind(session.ownerId, JSON.stringify(packed), Date.now() + 10 * 60 * 1000).run();
-  return c.json({ otpauthUri: ownerOtpauth(c.env.OWNER_EMAIL, setupKey), setupKey });
+  return c.json({ otpauthUri: ownerOtpauth(c.env, c.env.OWNER_EMAIL, setupKey), setupKey });
 });
 
 app.post("/api/auth/totp/confirm", async (c) => {

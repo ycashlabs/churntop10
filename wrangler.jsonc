@@ -48,7 +48,8 @@
     "OWNER_EMAIL": "tom2258@gmail.com",
     "ZONE": "ycashlabs.com",
     "HOSTNAME": "top10-dev.ycashlabs.com",
-    "ALLOWED_HOSTS": ""
+    "ALLOWED_HOSTS": "",
+    "TOTP_ISSUER": "churntop10 Local"
   },
   "env": {
     "dev": {
@@ -81,7 +82,8 @@
         "OWNER_EMAIL": "tom2258@gmail.com",
         "ZONE": "ycashlabs.com",
         "HOSTNAME": "desk-dev.churncapital.com",
-        "ALLOWED_HOSTS": "top10-dev.ycashlabs.com"
+        "ALLOWED_HOSTS": "top10-dev.ycashlabs.com",
+        "TOTP_ISSUER": "churntop10 Dev"
       }
     },
     "prod": {
@@ -111,7 +113,8 @@
         "OWNER_EMAIL": "tom2258@gmail.com",
         "ZONE": "ycashlabs.com",
         "HOSTNAME": "top10.ycashlabs.com",
-        "ALLOWED_HOSTS": ""
+        "ALLOWED_HOSTS": "",
+        "TOTP_ISSUER": "churntop10"
       }
     }
   }
