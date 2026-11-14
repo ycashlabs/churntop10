@@ -59,12 +59,11 @@ const IMPORTED_NOTE = "Imported from the Robinhood account. No buy rule. No auto
 const SELL_ALL_CONFIRM = "Confirm selling every simulated position and stopping new buys.";
 const RULES_HELP = "You edit the text; the app proofreads by saving a history entry for every change, status change, and approval. Only you can mark a rule Proven. Live trading uses only Proven rules. The Simulator can run any selected rules, including Experimenting ones. Editing a Proven rule creates a new Experimenting version; open trades keep the versions they started with.";
 
-const navOrder = ["Account Summary", "Top 10", "Rules", "Simulator", "Review", "Settings"];
+const navOrder = ["Account Summary", "Top 10", "Live Positions", "Simulator", "Review", "Rules", "Settings"];
+const navSource = read("src/client/nav.ts");
 
 function navOrderOk() {
-  // Extract visible nav labels in order.
-  const block = app.slice(app.indexOf("<nav>"), app.indexOf("</nav>"));
-  const labels = [...block.matchAll(/>(Account Summary|Top 10|Rules|Simulator|Review|Settings)</g)].map((m) => m[1]);
+  const labels = [...navSource.matchAll(/label: "([^"]+)"/g)].map((m) => m[1]);
   return JSON.stringify(labels) === JSON.stringify(navOrder) ? "" : `nav labels ${JSON.stringify(labels)}`;
 }
 
@@ -196,7 +195,7 @@ const catalog = [
       const mins = (app.match(/min=\{0\}/g) || []).length;
       return fromSource(mins >= 3, `expected min={0} on percent/capital inputs, found ${mins}`);
     } },
-  { id: "U-01", area: "UI", description: "Six screens in nav order: Account Summary, Top 10, Rules, Simulator, Review, Settings",
+  { id: "U-01", area: "UI", description: "Seven screens in nav order: Account Summary, Top 10, Live Positions, Simulator, Review, Rules, Settings",
     check() { const err = navOrderOk(); return err ? fail(err) : pass(); } },
   { id: "U-02", area: "UI", description: "Chrome: title Churn Top 10, stamp, clock ET, raw session name, Sign out",
     check() {
@@ -206,10 +205,11 @@ const catalog = [
       const err = (!titleOk ? "missing title " : "") + (chrome || "") + (et ? "" : " missing ET clock in summary payload");
       return err.trim() ? fail(err.trim()) : pass();
     } },
-  { id: "U-03", area: "UI", description: "Account Summary: Robinhood account, Session + SESSION_HELP, Live positions copy",
+  { id: "U-03", area: "UI", description: "Account Summary: Robinhood account and Session timeline; Live positions copy on its screen",
     check() {
-      const need = ["Robinhood account", "Live positions", "Not connected. Connect from", "This screen shows only the real Robinhood account.", "SESSION_HELP", "No open live positions."];
-      return fromSource(!includesAll(app, need), includesAll(app, need));
+      const need = ["Robinhood account", "Live positions", "Not connected. Connect from", "This screen shows only the real Robinhood account.", "SESSION_HELP", "No open live positions.", "Stops are app-watched every 5 minutes", "SessionChart"];
+      const hay = app + read("src/client/session-chart.tsx");
+      return fromSource(!includesAll(hay, need), includesAll(hay, need));
     } },
   { id: "U-04", area: "UI", description: "Top 10 help and table headers Symbol / Bid / Ask / Last",
     check() {
@@ -274,7 +274,7 @@ const catalog = [
     } },
   { id: "U-09", area: "UI", description: "View Only banner verbatim",
     check() { return fromSource(app.includes(VIEW_ONLY), "View Only banner text missing or changed"); } },
-  { id: "U-10", area: "UI", description: "SESSION_HELP verbatim in clock.ts and on Summary / Settings",
+  { id: "U-10", area: "UI", description: "SESSION_HELP verbatim in clock.ts and on Settings; Summary uses the short stop note",
     check() {
       const inClock = clock.includes(`export const SESSION_HELP = "${SESSION_HELP}"`) || clock.includes(SESSION_HELP);
       const uses = (app.match(/SESSION_HELP/g) || []).length >= 2;
@@ -291,9 +291,9 @@ const catalog = [
       ];
       return fromSource(!includesAll(app, need), includesAll(app, need));
     } },
-  { id: "U-12", area: "UI", description: "Shared position panel: Edit capital, Edit target / stop, trades table headers",
+  { id: "U-12", area: "UI", description: "Shared position table: one Edit dialog and trades headers inside the expansion",
     check() {
-      const need = ["Edit capital", "Edit target / stop", ">Side<", ">Qty<", ">Price<", ">Status<", ">Reason<"];
+      const need = ["Edit position", "Profit target %", "Stop-loss %", "Trading capital snapshot", ">Side<", ">Qty<", ">Price<", ">Status<", ">Reason<", "No trades recorded yet."];
       return fromSource(!includesAll(app, need), includesAll(app, need));
     } },
   { id: "U-14", area: "UI", description: "Trades table lists stored signals with the DESIGN §6 formatTradeSignalLine wording",
@@ -317,9 +317,9 @@ const catalog = [
     } },
 { id: "U-13", area: "UI", description: "No HTML title= tooltips on controls",
     check() {
-      // React component props named title= (PositionsPanel title) are headings, not HTML tooltips.
+      // React component props named title= (PositionsTable title) are headings, not HTML tooltips.
       const htmlTitles = [...app.matchAll(/<([a-zA-Z]+)[^>]*\stitle=\{?"/g)].map((m) => m[1]);
-      const ok = htmlTitles.filter((t) => !["PositionsPanel"].includes(t));
+      const ok = htmlTitles.filter((t) => !["PositionsTable", "PositionsPanel"].includes(t));
       return fromSource(ok.length === 0, `HTML title= on ${ok.join(", ")}`);
     } },
   { id: "R-01", area: "Rules", description: "Draft six seeds start Experimenting with verbatim bodies and signal lists",

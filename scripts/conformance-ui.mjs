@@ -88,8 +88,8 @@ try {
   }
 
   body = await text();
-  const nav = includesAll(body, ["Account Summary", "Top 10", "Rules", "Simulator", "Review", "Settings"]);
-  record("U-01", nav.length ? "FAIL" : "PASS", nav.length ? `nav missing ${JSON.stringify(nav)}` : "six nav labels visible");
+  const nav = includesAll(body, ["Account Summary", "Top 10", "Live Positions", "Simulator", "Review", "Rules", "Settings"]);
+  record("U-01", nav.length ? "FAIL" : "PASS", nav.length ? `nav missing ${JSON.stringify(nav)}` : "seven nav labels visible");
 
   const chrome = includesAll(body, ["Churn Top 10", "Sign out", " ET"]);
   const session = /\b(regular|extended|overnight|closed)\b/.test(body);
@@ -99,10 +99,21 @@ try {
   record("U-09", banner.length ? "FAIL" : "PASS", banner.length ? "View Only banner missing" : "View Only banner visible");
 
   const sessionHelp = "Buys run 24/5, Sunday 8:00 PM through Friday 8:00 PM ET.";
-  const summaryNeed = ["Robinhood account", "Session", sessionHelp, "Live positions"];
+  const summaryNeed = ["Robinhood account", "Session", "Stops are app-watched every 5 minutes"];
   const sumMissing = includesAll(body, summaryNeed);
   record("U-03", sumMissing.length ? "FAIL" : "PASS", sumMissing.length ? `summary missing ${JSON.stringify(sumMissing)}` : "Account Summary copy visible");
-  record("U-10", body.includes(sessionHelp) ? "PASS" : "FAIL", body.includes(sessionHelp) ? "SESSION_HELP on Account Summary" : "SESSION_HELP missing on Summary");
+  record("U-10", body.includes("Stops are app-watched every 5 minutes") ? "PASS" : "FAIL", "Summary shows the one-line stop note");
+
+  await go("/positions");
+  await page.waitForFunction(() => document.body.innerText.includes("Live positions") || document.body.innerText.includes("No open live positions"));
+  body = await text();
+  if (!body.includes("Live positions")) {
+    const row = results.find((r) => r.id === "U-03");
+    if (row) {
+      row.result = "FAIL";
+      row.reason = "Live positions heading missing on /positions";
+    }
+  }
 
   await go("/top10");
   await page.waitForFunction(() => document.body.innerText.includes("Top 10") || document.body.innerText.includes("Symbol"));
@@ -163,8 +174,12 @@ try {
   } else {
     record("H-05", "PASS", `simulator API returned ${trades.length} position trade(s); ${withSignals.length} carried signals (id, name, value, threshold, fired, reason)`);
   }
-  const bodyAfterSim = await text();
-  const wording = bodyAfterSim.includes(": Fired.") || bodyAfterSim.includes(": Not fired.");
+  await page.evaluate(() => {
+    const opener = [...document.querySelectorAll("button")].find((item) => (item.getAttribute("aria-label") || "").startsWith("Trades for"));
+    opener?.click();
+  });
+  const bodyAfterExpand = await text();
+  const wording = bodyAfterExpand.includes(": Fired.") || bodyAfterExpand.includes(": Not fired.");
   if (withSignals.length && !wording) {
     record("U-14", "FAIL", "trades were returned with signals but the DESIGN Fired/Not fired wording was not visible on Simulator");
   } else if (withSignals.length && wording) {

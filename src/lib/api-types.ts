@@ -159,6 +159,8 @@ export interface PositionView {
   tradingCapital: string;
   profitTargetPct: number;
   stopLossPct: number;
+  /** app or imported. Omitted only on a response from an older Worker. */
+  source?: "app" | "imported";
   buyRule?: string;
   sellRule?: string;
   company?: CompanyProfile | null;

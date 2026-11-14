@@ -39,18 +39,18 @@ Times are America/Chicago.
 
 | ID | Statement | Check |
 | --- | --- | --- |
-| U-01 | Six screens in nav order: Account Summary, Top 10, Rules, Simulator, Review, Settings | App.tsx; headless walk |
+| U-01 | Seven screens in nav order: Account Summary, Top 10, Live Positions, Simulator, Review, Rules, Settings | `src/client/nav.ts`; headless walk |
 | U-02 | Chrome: title Churn Top 10, stamp, clock ET, raw session name, Sign out | App.tsx; walk |
-| U-03 | Account Summary: Robinhood account, Session + SESSION_HELP, Live positions copy | App.tsx; walk |
+| U-03 | Account Summary: Robinhood account, Session timeline; Live positions copy on `/positions` | App.tsx; walk |
 | U-04 | Top 10 help and table headers Symbol / Bid / Ask / Last | App.tsx; walk |
 | U-05 | Settings labels, sizing note, Sell All copy, Robinhood 3-step copy | App.tsx; walk |
 | U-06 | Rules contract help; stamps are raw status strings | App.tsx; walk |
 | U-07 | Simulator help, Run check, Simulated positions, Latest check | App.tsx; walk |
 | U-08 | Review filters, scorecards, imported bot note | App.tsx; walk |
 | U-09 | View Only banner verbatim | App.tsx; walk |
-| U-10 | SESSION_HELP verbatim in clock.ts and on Summary / Settings | source; walk |
+| U-10 | SESSION_HELP verbatim in clock.ts and on Settings; Summary shows the one-line stop note | source; walk |
 | U-11 | Sign-in copy: one owner, Create passkey / Sign in, recovery | App.tsx; walk |
-| U-12 | Shared position panel: Edit capital, Edit target / stop, trades table headers | App.tsx |
+| U-12 | Shared position table: one Edit dialog, trades table headers inside the expansion | App.tsx |
 | U-13 | No `title=` tooltips on controls | App.tsx |
 | U-14 | Trades table lists stored signals with the DESIGN §6 `formatTradeSignalLine` wording | App.tsx; `test/trade-signals.test.ts`; headless walk when a trade is visible |
 

@@ -12,7 +12,7 @@ This file is the rebuild contract. The files below are supporting detail. If the
 
 | File | Role |
 | --- | --- |
-| [spec-v2.md](spec-v2.md) | Product contract for v2 and v3 (iterative). The v2 “five screens” intro is historical; the built app has six screens, documented here. |
+| [spec-v2.md](spec-v2.md) | Product contract for v2 and v3 (iterative). The v2 “five screens” intro is historical; the built app has seven screens, documented here. |
 | [storage.md](storage.md) | Storage interface, D1-now / Postgres-later, emergency failover (not built). |
 | [sessions.md](sessions.md) | 24/5 sessions and the synthetic stop, in more trading-desk detail. |
 | [ACCESS.md](ACCESS.md) | Cloudflare Access applications, JWT checks, no bypass / no service tokens. |
@@ -109,16 +109,17 @@ The document title (HTML `<title>` and the `h1`) is **Churn Top 10**. Visual lay
 | --- | --- |
 | `/` | Account Summary |
 | `/top10` | Top 10 |
+| `/positions` | Live Positions |
 | `/rules` | Rules |
 | `/simulator` | Simulator |
 | `/review` | Review |
 | `/settings` | Settings |
 
-Nav order: Account Summary, Top 10, Rules, Simulator, Review, Settings. The current route gets class `active`. On a wide screen the nav is a left sidebar. Below 982px it is a horizontal scroller under the header. No item is dropped.
+Nav order: Account Summary, Top 10, Live Positions, Simulator, Review, Rules, Settings. Rules sits immediately above Settings. The current route gets class `active`. On a wide screen the nav is a left sidebar. Below 982px it is a horizontal scroller under the header. No item is dropped. `/positions` is a client route on the same SPA; it does not add a Worker route.
 
 **Header (every authenticated screen):** wordmark `Churn Top 10`, stamp (`New buys stopped` if Sell All is on, else `Live` if mode is live, else `View only`), clock (`YYYY-MM-DD HH:MM ET`), raw session name (`regular` / `extended` / `overnight` / `closed`), theme switch, button **Sign out**.
 
-**Account strip** (every authenticated screen, under the header): see [Look and feel](#look-and-feel). It does not change trading mode.
+**Account strip** (authenticated trading screens, under the header): see [Look and feel](#look-and-feel). It does not change trading mode. Settings and Review hide the strip and hide the yellow broker-gate banner. Account Summary, Top 10, Live Positions, Simulator, and Rules keep the strip. Rules keeps the broker-gate banner as well. The View Only banner and the Sell All banner stay on every authenticated screen.
 
 **Global banners** (under the account strip, can stack):
 
@@ -129,7 +130,7 @@ Nav order: Account Summary, Top 10, Rules, Simulator, Review, Settings. The curr
 
 **Sign-in** (`/` when unauthenticated or in recovery) is a separate shell (no sidebar, no account strip): a centered card branded **Churn Capital** / **Churn Top 10**, the §6.2 explanation, an account row for the single owner, Create passkey or Sign in, the authenticator-code form when TOTP is enrolled, and the recovery email form. The same theme switch sits on the card. Flows are unchanged.
 
-**Shared position panel** (`PositionsPanel`) is used on Account Summary (**Live positions**) and Simulator (**Simulated positions**). Each open position is an article: symbol heading, qty @ avg · last · P&L, capital snapshot and target/stop and rule labels, a trades table (Side, Qty, Price, Status, Reason) with stored signals listed under the reason as specified in [§6](#6-screens-and-exact-ui-copy), and if open: **Edit capital** and **Edit target / stop**. Those confirms, Sell All, and the passkey step-up are centered dialogs. Copy and buttons are unchanged.
+**Shared position table** (`PositionsTable`) is used on Live Positions and on Simulator (**Simulated positions**). It is one dense table, one row per open position: letter mark, ticker, and company name; qty; avg cost; last; P&L; target; stop; trading capital snapshot; source and rule flags; actions. Target and stop are the signed percent from last to the target price and the stop price (the same distances as the Top 10 columns), colored with the quote text colors, with a tooltip that also states the settings percents. Source is `imported` or `app` (`positions.source` on the existing view; no new column and no migration). Flags are the buy and sell rule labels already on the row. The trades table (Side, Qty, Price, Status, Reason), including stored signals in the [§6](#6-screens-and-exact-ui-copy) form, is hidden until that row is expanded. `No trades recorded yet.` appears only inside an expanded row that has no trades. **Edit** opens one dialog that edits the capital snapshot, profit target %, and stop % together. Save posts `POST /api/positions/:id/capital` with `confirm: true` only when the snapshot changed, and `POST /api/positions/:id/exits` only when a percent changed. Validation, the capital confirm, and the exits step-up are unchanged. Sell All and the passkey step-up stay centered dialogs.
 
 Status badges keep the raw strings `experimenting` / `proven` / `retired`. Hover and focus use native `title` tooltips where [Look and feel](#look-and-feel) names them (truncated rule text, score caveats, target/stop math, disabled filters).
 
@@ -142,6 +143,8 @@ Light finance-desk layout and density, inspired by a screener only. No Yahoo log
 ### Principles
 
 Information density is the point: about 32px table rows, 8px horizontal cell padding, many columns at 1440px, a sticky header and leading column, a summary strip above the page, and a **Customize** column chooser. At 390px the tables and the strip scroll horizontally. Rank and symbol (Top 10) or the rule name (Rules) stay sticky. Columns are not hidden to simplify the phone view; the owner hides them with Customize.
+
+**Site-wide components.** Styling a component sets its default for the whole site. Every instance of a component — buttons, ticker cells, tables, cards, and popups — shares that one style unless a specific screen in this document states an exception.
 
 One design system covers every screen from sign-in through Settings. The theme is **Light** or **Dark** only (no System option). Default is light. The choice is saved in `localStorage` under `churntop10.theme` (`light` or `dark`) and applied on `document.documentElement` (`data-theme` and `color-scheme`) before paint. The header switch and Settings → **Theme** edit the same value.
 
@@ -157,7 +160,7 @@ Self-hosted Inter variable, SIL Open Font License 1.1: `fonts/InterVariable.woff
 | `badge` | 11px | 500 | 1.2 | 0 | Compact counts, book toggle |
 | `caption` | 12px | 400 | 1.25 | 0 | Table headers, help, top-bar meta |
 | `body` | 14px | 400 | 1.4 | 0 | Body, table cells, form values |
-| `body-medium` | 14px | 500 | 1.25 | 0 | Sidebar, symbol pills, strip values |
+| `body-medium` | 14px | 500 | 1.25 | 0 | Sidebar, symbol text, strip values |
 | `label-lg` | 16px | 500 | 1.4 | 0 | Form labels |
 | `title-sm` | 18px | 700 | 1.25 | −0.01em | Small section titles |
 | `title` | 24px | 700 | 1.25 | −0.01em | Page title (`h2`) |
@@ -172,7 +175,7 @@ Light (default): `--bg #f1f3f5`, `--surface #ffffff`, `--surface-2 #f7f8f9`, `--
 
 Dark: `--bg #0e1114`, `--surface #181c21`, `--surface-2 #12161a`, `--ink #e8eaed`, `--muted #9aa0a6`, `--line #2a2f36`, `--up #00aa76`, `--down #ff4143`, `--flat #c7cdd2`, `--warning #d4a017`, `--accent #6ea0e8`, `--stamp #e07070`, `--good #5aa074`. Pill fills: `--up-bg #014e40`, `--down-bg #952835`, `--flat-bg #363f44`.
 
-Quote colors are the Yahoo Finance CSS tokens as of 14 November 2026. They color a signed figure only: price change, change percent, P&L, the day-change line and Today's P/L, Total P/L, best and worst position values on the strip, rule profit and worst loss, review P&L, and sparkline strokes. A zero uses `--flat` (`.flat` is not `--muted`). Change and Change % in the Top 10 table are pills on `--up-bg` / `--down-bg` / `--flat-bg`. Those Yahoo text colors pass WCAG AA 4.5:1 on the page surface (light text on white is about 5.2:1; dark text on `--surface` is about 5.0:1 or better) and fail on the tint, so pill text is `--ink` (about 9.5:1 on the light tints and about 6.6:1 on the dark tints). Heatmap fills and the ink chosen for each step are below. Buttons, badges, headings, the Live and Proven stamps (`--good`), and letter-mark tones keep their own colors. Win rate stays neutral because it is not a signed gain or loss. Account value, cash, and buying power stay `--ink`. A paused deploy line uses `--warning`, not `--down`.
+Quote colors are the Yahoo Finance CSS tokens as of 14 November 2026. They color a signed figure only, as plain text (class `up` / `down` / `flat` on `--up` / `--down` / `--flat`). That covers price change, change percent, P&L, the day-change line and Today's P/L, Total P/L, best and worst position values on the strip, rule profit and worst loss, review P&L, target and stop percents when the figure is signed, and sparkline strokes. A zero uses `--flat` (`.flat` is not `--muted`). There are no filled quote pills. The `--up-bg` / `--down-bg` / `--flat-bg` tokens stay in the stylesheet and are unused by moving values. Those Yahoo text colors pass WCAG AA 4.5:1 on the page surface (light text on white is about 5.2:1; dark text on `--surface` is about 5.0:1 or better). Heatmap cells are the exception: the cell fill and the ink chosen for each step below stay, because the fill is the value and the quote text color would fail on that tint. Buttons, badges, headings, the Live and Proven stamps (`--good`), and letter-mark tones keep their own colors. Win rate stays neutral because it is not a signed gain or loss. Account value, cash, and buying power stay `--ink`. A paused deploy line uses `--warning`, not `--down`.
 
 Heatmap scale, light then dark. Steps: null or 0 is neutral; above 0 through 0.5% is 1; through 1% is 2; through 2% is 3; through 3% is 4; above 3% is 5. Losses mirror that.
 
@@ -192,11 +195,13 @@ Heatmap scale, light then dark. Steps: null or 0 is neutral; above 0 through 0.5
 
 Each ink above is at least 4.5:1 on its fill. Page `--ink` fails on light neg-4 (about 4.1:1) and on the stronger dark steps, so those cells use near-black or white instead.
 
-Spacing uses 2, 4, 8, 12, 16, 20, 24, 28, 32px. Table rows are 32px, headers 28px. Sidebar width is 200px and collapses below 982px. Auth card radius is 32px. Text inputs, textareas, and selects are 36px tall with a 12px radius. Checkboxes and radios are 16px native controls (`accent-color: var(--accent)`) and are excluded from that field rule, so a checkbox sits immediately left of its label. The account row is 12px. Sign-in buttons are pills (999px). In-app buttons are 8px. Focus ring is 2px `--accent`. Primary buttons are `--ink` fill with `--surface` text. Quiet buttons are transparent with a 1px `--ink` border. Danger (`Sell All Positions`, `Confirm sell all`, `Disconnect Robinhood`, `Turn off authenticator app`) uses `--stamp`.
+Spacing uses 2, 4, 8, 12, 16, 20, 24, 28, 32px. Table rows are 32px, headers 28px. Sidebar width is 200px and collapses below 982px. Auth card radius is 32px. Text inputs, textareas, and selects are 36px tall with a 12px radius. Checkboxes, radios, and the Trading capital range input are excluded from that field rule. The account row is 12px. Focus ring is 2px `--accent`.
+
+**Buttons.** One shared button style, in both themes. The fill is light or soft, never near-black. Tokens: light `--btn #eef2f6` / `--btn-ink #242a30` / `--btn-line #d3dae3`, and primary `--btn-primary #d9e6f8` / `--btn-primary-ink #16325c` / `--btn-primary-line #b7cbe8`. Dark: `--btn #2c3542` / `--btn-ink #e8eaed` / `--btn-line #465166`, and primary `--btn-primary #3a4d68` / `--btn-primary-ink #e7eef8` / `--btn-primary-line #5d7596`. Primary text on those fills is about 7:1 or better. The primary variant is only a slightly stronger soft fill (Set Trading Capital, Run check, Save list, Save changes, Create rule, Mark Proven, Switch to Live, Finish connecting, Open Robinhood sign-in, Apply filters, and the position Save). Quiet is transparent with a 1px `--line` border. In-app radius is 8px. Table actions use the same fills at 12px type. Sign-in buttons keep the full-width pill shape (999px radius) and use the primary fill, which is the shape exception, not a second color. Selected chips and the strip’s Sim/Live toggle use the primary fill rather than a near-black slab. Danger (`Sell All Positions`, `Confirm sell all`, `Disconnect Robinhood`, `Turn off authenticator app`) is the only red (`--stamp`). Retire, Cancel, and Edit are not danger.
 
 ### Settings cards
 
-Each Settings group is its own card: 1px `--line`, 12px radius, 16px padding, 12px gap, same tokens in light and dark. Headings are 16px / 700 with a small inlined icon: **Theme** (the existing fieldset legend), **Trading capital and caps**, **Mode**, **Robinhood**, **Authenticator app**, **Danger zone**. Helper text under a heading or control is 13px `--muted`. Quick-fill buttons are an equal wrapped grid inside the caps card, and the balance warning stays in that card. Save caps stays with the caps. Switch to Live / Switch to View Only and Allow new buys again stay in Mode. Sell All Positions, Disconnect Robinhood, and Turn off authenticator app sit in the Danger zone; their confirm and passkey handlers are unchanged. The SEC credit sentence is its own card and keeps the §6.4 words. Passkey create, sign-in, and recovery stay on the sign-in card. Settings does not manage passkeys.
+Each Settings group is its own card: 1px `--line`, 12px radius, 16px padding, 12px gap, same tokens in light and dark. Headings are 16px / 700 with a small inlined icon: **Theme** (the existing fieldset legend), **Trading capital and caps**, **Mode**, **Robinhood**, **Authenticator app**, **Danger zone**. Helper text under a heading or control is 13px `--muted`. Trading capital uses a 0–100% slider of the current balance (step 1%) synced with the dollar input; the balance warning stays in that card. **Set Trading Capital** stays with the caps (same `POST /api/settings` and the same step-up). Switch to Live / Switch to View Only and Allow new buys again stay in Mode. Sell All Positions, Disconnect Robinhood, and Turn off authenticator app sit in the Danger zone; their confirm and passkey handlers are unchanged. The SEC credit sentence is its own card and keeps the §6.4 words. Passkey create, sign-in, and recovery stay on the sign-in card. Settings does not manage passkeys. Settings and Review do not show the account strip or the broker-gate banner.
 
 The same card chrome wraps the Top 10 symbol editor and splits Simulator “Rules to run” out of the stats card. Account Summary, Rules edit and history, Review, Orders, Latest check, and position panels were already cards.
 
@@ -204,11 +209,13 @@ The same card chrome wraps the Top 10 symbol editor and splits Simulator “Rule
 
 Font Awesome Free 6.7.2 solid icons, inlined as SVG in the client bundle (`src/client/icons.tsx`). License text is `icons/LICENSE.txt` (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT; Copyright 2024 Fonticons, Inc.). Nothing is loaded from Font Awesome or any other host. `font-src` stays `'self'`. The embedded asset writer stores `.woff2` as base64 so the Inter file survives the Worker bundle. Used names: key, shield, mail, user, sun, moon, logout, table, grid, sliders, search, chevron, menu, close, lock, wallet, rightLeft, link, warning. Lock is the wider 448×512 glyph; link is 640×512. The others use the 512×512 box.
 
-Each ticker also has a first-party letter mark (`src/client/symbol.tsx`): an inline SVG, 22px, rounded rect, the symbol’s first letter in Inter. Eight tone classes (`tone-0` … `tone-7`) mix a fixed hue into `--surface-2`, and the letter uses `--ink`, so the same mark works in light and dark. Those hues are identity colors. They are not `--up` or `--down`. On a heatmap cell the symbol pill keeps `--ink` on `--surface`, and the company name uses the cell ink. No image host, no logo API, and no CSP change. `style-src` stays `'self'` (the mark uses classes, not a style attribute).
+Each ticker also has a first-party letter mark (`src/client/symbol.tsx`): an inline SVG, 22px, rounded rect, the symbol’s first letter in Inter. Eight tone classes (`tone-0` … `tone-7`) mix a fixed hue into `--surface-2`, and the letter uses `--ink`, so the same mark works in light and dark. Those hues are identity colors. They are not `--up` or `--down`. On a heatmap cell the symbol keeps `--ink` on the cell fill (no chip), and the company name uses the cell ink. The heatmap percent keeps that cell ink too; it is not a second quote-text color. No image host, no logo API, and no CSP change. `style-src` stays `'self'` (the mark uses classes, not a style attribute).
 
 ### Account strip
 
-A Sim / Live badge and tiles sit on every signed-in screen. The badge chooses which book the tiles read. It does not call `POST /api/mode`. Default is **Sim** when Settings mode is `view_only`, and **Live** when mode is `live`. A masked live account, when connected, is the existing `maskedAccount` value (`••••` plus the last four). `SIM0000999` is never shown.
+A Sim / Live badge and tiles sit on Account Summary, Top 10, Live Positions, Simulator, and Rules. Settings and Review omit the strip. The badge chooses which book the tiles read. It does not call `POST /api/mode`. Default is **Sim** when Settings mode is `view_only`, and **Live** when mode is `live`. A masked live account, when connected, is the existing `maskedAccount` value (`••••` plus the last four). `SIM0000999` is never shown.
+
+Live Account value reads only the current Robinhood portfolio snapshot (`robinhoodStatus === "connected"` and a parseable `totalValue`). Open positions are the stored `positions` rows and can include an imported holding, including the dev TSLL fixture, while that snapshot is missing. A missing snapshot shows **Not connected** on Account value and does not invent a balance from the position. `robinhoodStatus === "error"` (a saved sign-in whose read failed) uses the same tile text; the tooltip is `robinhoodError`. That is the disconnected or unread snapshot, not a ticker bug, and the token flow is unchanged.
 
 Tiles, left to right after the badge: Account value, Today's P/L, Total P/L, Cash (simulator) or Buying power (live), Open positions, Today's trades, Win rate, Deployed / cap, Best position, Worst position. Each has a 11px label, a 14px/500 value, a change line, and a small client-side sparkline. The dotted sparkline line is the first sample stored for that ET date. Samples live in tab memory (`rememberSample`). A reload starts a new line. There is no timeseries table.
 
@@ -232,7 +239,7 @@ Columns (Customize can hide any except # and Symbol; preference `churntop10.top1
 | Column | Source |
 | --- | --- |
 | # | Order of `top10` (rank) |
-| Symbol | Letter mark plus the symbol pill. The company name sits under the symbol when SEC data has it. See [§8.6](#86-sec-company-names-sector-and-industry). |
+| Symbol | Letter mark plus the symbol, left-aligned, with no bordered chip. The company name sits under the symbol when SEC data has it. The same cell is used wherever a symbol shows. A link from the ticker to a Company Profile is deferred; see [§9](#9-planned-approved-not-built). See [§8.6](#86-sec-company-names-sector-and-industry). |
 | Sector, Industry | SIC division and SIC description from [§8.6](#86-sec-company-names-sector-and-industry). An em dash when the company has no SIC or the row is missing. |
 | Last, Bid, Ask | Existing strings, `Unavailable` when missing |
 | Change, Change % | `last` minus `previousClose` already on the parsed quote. `null` when previous close was not reported. Not a new quote request. |
@@ -246,9 +253,9 @@ The symbol cell may grow past the 32px row so the company name fits. 1D series, 
 
 ### Rules table
 
-Heading **Rules contract**, the §6.6 help, and the actions **Edit / rename**, **Mark Proven**, **Move to Experimenting**, **Retire**, **History** stay. Status badges stay the raw strings. Side stays `Buy rule` / `Sell rule`. Signals stay joined by `", "` or `Uses Settings percentages`. `No trades yet.` is the profit cell when `tradeCount` is 0. Other empty numbers stay `—`. The plain-English body is the name cell’s tooltip and the edit form.
+Heading **Rules contract**, the §6.6 help, and the table action **Edit** stay. **Edit** opens the existing rename form (button label **Edit**, formerly **Edit / rename**). The rule name is a link. It opens one dialog with the plain-English body, status, side, score line, the full Signals list (catalog name and id, or `Uses Settings percentages` when the list is empty), and **Mark Proven**, **Move to Experimenting** (when the rule is Proven), **Retire**, and **History**. Those status actions and the history lines behave as before, including the passkey step-up. Status badges stay the raw strings. Side stays `Buy rule` / `Sell rule`. `No trades yet.` is the profit cell when `tradeCount` is 0. Other empty numbers stay `—`. The plain-English body is the name tooltip and the edit form.
 
-Columns: Name (`name` plus `v{version}`), Side, Status, Points, Trend, Profit (`avgProfit`), Win rate, Risk (worst loss, tooltip that the Risk points component is not built), Confidence, Trades, Last triggered, Signals, Actions. Points, Trend, and Confidence render `—`. Points tooltip: `Points 0–100 are not built yet. Weights would be Profit 40%, Win rate 25%, Risk 20%, Confidence 15%.` Customize key: `churntop10.rules.columns`. Name and Actions stay visible.
+Columns: Name (`name` plus `v{version}`), Side, Status, Points, Trend, Profit (`avgProfit`), Win rate, Risk (worst loss, tooltip that the Risk points component is not built), Confidence, Trades, Last triggered, Actions. The Signals column is removed from the table and from Customize. Search still matches signal ids. Points, Trend, and Confidence render `—`. Points tooltip: `Points 0–100 are not built yet. Weights would be Profit 40%, Win rate 25%, Risk 20%, Confidence 15%.` Customize key: `churntop10.rules.columns`. Name and Actions stay visible.
 
 `lastTriggeredAt` on `GET /api/rules` is the max `trades.created_at` for any version in the family (a SELECT). `null` when none.
 
@@ -298,14 +305,14 @@ Settings live in `app_settings` (singleton `id = 1`). The Settings screen edits 
 | `cash` | `10000` | Simulator / fallback cash when no Robinhood equity is available. |
 | `account_number` | `SIM0000999` | Placeholder; never shown in the UI (and must stay masked if it ever is). |
 
-**HTML inputs** on Settings use `min={0}` for the three percents and Trading capital, and `min={1} max={1000}` for the order cap. The **server rejects 0** for percents and for Trading capital (`value > 0`). A user can type 0 in the box; Save caps then fails with the messages above. That input-min mismatch is called out in [§19](#19-doc-vs-code-mismatches).
+**HTML inputs** on Settings use `min={0}` for the three percents and Trading capital, and `min={1} max={1000}` for the order cap. The **server rejects 0** for percents and for Trading capital (`value > 0`). A user can type 0 in the box; Set Trading Capital then fails with the messages above. That input-min mismatch is called out in [§19](#19-doc-vs-code-mismatches).
 
-**Quick-fill buttons** for Trading capital: 10%, 20%, …, 100% of the **current balance**, each labeled `{pct}% ({dollars to two places})`. The saved value is always the dollar figure, not the percent.
+**Trading capital slider:** 0–100% of the **current balance**, step 1%. The slider and the dollar input stay in sync. Dragging the slider writes `round(balance × percent / 100)` dollars. Typing an exact dollar amount moves the thumb to the nearest 1% (clamped at 100 when the amount is above the balance) and the readout shows the live percent and the dollar figure. The saved value is always the dollar figure, not the percent. The help sentence still says quick fills use the current balance. The server presets array may still be on the payload; the screen does not render the ten buttons.
 
 **Per-position overrides** (not Settings, but related):
 
-- **Edit capital** — changes only that position’s `trading_capital_snapshot`. Requires confirm (`confirm: true`). Message if invalid: `Trading capital must be a positive dollar amount.` Also: `Confirm the capital change for this position.` / `That open position was not found.` Logged in `position_capital_history`. Never sells shares; if the new cap is below holdings, the app just stops adding.
-- **Edit target / stop** — per-position `profit_target_pct` / `stop_loss_pct`, same `validExitPct` messages, logged in `position_exit_settings_history`. **Requires passkey step-up.** Edit capital does **not**.
+- **Edit** (one dialog) posts the two existing calls when the fields changed. Capital changes only that position’s `trading_capital_snapshot`. Requires confirm (`confirm: true`). Message if invalid: `Trading capital must be a positive dollar amount.` Also: `Confirm the capital change for this position.` / `That open position was not found.` Logged in `position_capital_history`. Never sells shares; if the new cap is below holdings, the app just stops adding. Capital is **not** a step-up.
+- Target and stop are per-position `profit_target_pct` / `stop_loss_pct`, same `validExitPct` messages, logged in `position_exit_settings_history`. **Requires passkey step-up.** The dialog skips a call whose value did not change.
 
 ---
 
@@ -385,7 +392,7 @@ The stop is only checked when a cycle runs (normally every 5 minutes). A move be
 
 ### 5.7 Trading capital snapshot
 
-Settings holds a **fixed dollar amount**. Quick fills are 10% increments of current balance plus custom entry. Each new position snapshots **effective** capital at open (`min(saved, real equity)` when saved is higher; if saved is invalid, fall back to balance). That snapshot is what the position uses for the 10% cap, the 20% starter, and later adds. Changing Settings applies only to positions opened afterwards. **Edit capital** on an open position is confirmed, logged, and never sells shares. If capital in Settings is above real equity, the UI warns and new trades use the lower figure. Lowering Settings pauses new buys until exposure is under the new figure.
+Settings holds a **fixed dollar amount**. The slider is 1% steps of the current balance, and the dollar box is the exact entry. Each new position snapshots **effective** capital at open (`min(saved, real equity)` when saved is higher; if saved is invalid, fall back to balance). That snapshot is what the position uses for the 10% cap, the 20% starter, and later adds. Changing Settings applies only to positions opened afterwards. **Edit capital** on an open position is confirmed, logged, and never sells shares. If capital in Settings is above real equity, the UI warns and new trades use the lower figure. Lowering Settings pauses new buys until exposure is under the new figure.
 
 ### 5.8 Live placement path (only if the gate is armed)
 
@@ -405,14 +412,15 @@ All strings below are **verbatim** from `src/client/App.tsx` and `SESSION_HELP` 
 - Loading (authenticated, summary not in yet): `Loading the account…`
 - Generic load failure: `Could not load.`
 - Generic action failure: `Request failed.`
-- Nav: `Account Summary` · `Top 10` · `Rules` · `Simulator` · `Review` · `Settings` (sidebar; same order)
+- Nav: `Account Summary` · `Top 10` · `Live Positions` · `Simulator` · `Review` · `Rules` · `Settings` (sidebar; same order)
 - Stamp: `New buys stopped` | `Live` | `View only`
 - Theme switch label: `Dark` when the theme is light, `Light` when it is dark
 - Button: `Sign out`
 - Banner, View Only: `View Only. Live real-money trading stays off until you explicitly approve it. The Simulator has its own screen and fake money.`
 - Banner, live mode but gate off: `Live is selected, but the broker gate is off. No real Robinhood orders are sent. Use the Simulator screen to run selected rules with fake money.`
 - Banner, Sell All on: `Sell All Positions is on. New buys are stopped. Real Robinhood orders are not cancelled or sold from here.`
-- Shared session help (`SESSION_HELP`), used on Account Summary → Session and on Settings: `Buys run 24/5, Sunday 8:00 PM through Friday 8:00 PM ET. Outside regular hours, entries and exits are limit orders only. The app watches the stop-loss every 5 minutes and sends a limit sell if the price is at or below the stop. That is not a resting broker stop, so a move between checks can go through the stop before a sell is sent.`
+- Shared session help (`SESSION_HELP`), used on Settings: `Buys run 24/5, Sunday 8:00 PM through Friday 8:00 PM ET. Outside regular hours, entries and exits are limit orders only. The app watches the stop-loss every 5 minutes and sends a limit sell if the price is at or below the stop. That is not a resting broker stop, so a move between checks can go through the stop before a sell is sent.`
+- Account Summary session note (one line, under the timeline): `Stops are app-watched every 5 minutes. That is not a resting broker stop.`
 
 ### 6.2 Sign-in
 
@@ -456,32 +464,27 @@ All strings below are **verbatim** from `src/client/App.tsx` and `SESSION_HELP` 
 **Section “Session”**
 
 - Heading: `Session`
-- Body: `SESSION_HELP` (above)
-- Labels: `Clock`, `Session`, `Quotes`
+- A horizontal 24-hour timeline of the app’s US equity sessions, drawn in the viewer’s time zone (`Intl.DateTimeFormat().resolvedOptions().timeZone`). The caption names the zone abbreviation from `timeZoneName: "short"` (EST/EDT, PST/PDT, GMT/BST, and the equivalent in other zones), so a DST change moves the bars. Session boundaries are the ET windows in `marketSession`, converted through `Intl` rather than a fixed offset. Display bars, which do not change `marketSession`: Overnight (Sunday 8:00 PM through Friday 8:00 PM ET, outside the daytime windows), Pre-market (weekdays 7:00–9:30 ET), Regular (weekdays 9:30–16:00 ET), After-hours (weekdays 16:00–20:00 ET), and Closed (Friday 8:00 PM through Sunday 8:00 PM ET). Each bar is rounded, colored as a session identity (not an up/down quote color), and labeled inside with its start and end in local time when the bar is wide enough. The axis has an hour tick. A **Now** marker sits at the current local minute. The bar that contains now is stroked. Works in light and dark.
+- One-line note: `Stops are app-watched every 5 minutes. That is not a resting broker stop.`
+- Labels under the chart: `Clock`, `Session`, `Quotes`
 - Quotes values: `Live Robinhood` | `Recorded book (Robinhood not connected)`
 
-**Live positions** (shared panel)
+**Live positions** live on `/positions`, not on Account Summary. The screen shows the account strip, then the shared position table. Empty copy stays here.
 
 - Heading: `Live positions`
 - Empty: `No open live positions. Robinhood holdings are imported here automatically. Live real-money trading stays off until you approve it.`
-- Per position heading: the symbol, with the letter mark and the company name under it when SEC data has it. The line under that stays `{quantity} @ {avgCost} · last {last} · P&L {pnl}`. The buy and sell rule names stay on the following line.
-- Meta: `Trading capital snapshot {tradingCapital}. Target {profitTargetPct}% / stop {stopLossPct}% of average cost. {buyRule} · {sellRule}` (rule names omitted if missing; imported positions use buy rule `imported/manual`)
+- Columns: Symbol (letter mark, ticker, company name), Qty, Avg cost, Last, P&L, Target, Stop, Trading capital, Source, Actions. Source is `imported` or `app`. The muted flag line is `{buyRule} · {sellRule}` (imported positions use buy rule `imported/manual`). Simulated positions use the same columns under the heading `Simulated positions`.
 - Trades table headers: `Side`, `Qty`, `Price`, `Status`, `Reason`
 - Empty trades: `No trades recorded yet.`
 - The Reason cell starts with the size reason, then a space and the exit reason when one is present. When the trade has stored signals, each signal is listed on its own following line in this exact form, via `formatTradeSignalLine`: `{name}: Fired. Value {value}, threshold {threshold}. {reason}` or `{name}: Not fired. Value {value}, threshold {threshold}. {reason}`. If `value` is null, omit the `Value …` clause, so the line is `{name}: Fired. {reason}` or `{name}: Not fired. {reason}`. If `value` is present and `threshold` is null, the clause is `Value {value}.`. Settings-only exits with no stored signals show only the size and exit reasons.
-- Buttons: `Edit capital` · `Edit target / stop`
+- Button: `Edit` (one dialog for capital, target, and stop)
 
-**Edit capital dialog**
+**Edit position dialog**
 
-- `Change this position’s Trading capital snapshot only. This never sells shares. If the new cap is below current holdings, the app just stops adding.`
-- Buttons: `Confirm capital change` · `Cancel`
-- Failure: `Could not edit.`
-
-**Edit target / stop dialog**
-
-- Labels: `Profit target %` · `Stop-loss %`
-- Buttons: `Save target and stop` · `Cancel`
-- Failure: `Could not edit.`
+- `Change this position’s Trading capital snapshot, profit target, and stop together. This never sells shares. If the new cap is below current holdings, the app just stops adding.`
+- Labels: `Trading capital snapshot` · `Profit target %` · `Stop-loss %`
+- Buttons: `Save` · `Cancel`
+- Save posts capital with `confirm: true` when the snapshot changed, then exits when a percent changed. Failure: `Could not edit.`
 
 ### 6.4 Top 10
 
@@ -504,11 +507,11 @@ All strings below are **verbatim** from `src/client/App.tsx` and `SESSION_HELP` 
 - Help: `SESSION_HELP`
 - Labels: see [§4](#4-settings-catalog) (exact label text is in that table).
 - Sizing note: `There are no buy amount fields. Sizing is the 20% starter (2% of the position’s Trading capital snapshot), signal-sized adds, and a 10% per-symbol cap on that snapshot. Sells have no dollar limit. The app never borrows.`
-- Buttons: `Save caps` · `Switch to Live` · `Switch to View Only` · `Sell All Positions` · `Allow new buys again` (only if killed)
+- Buttons: `Set Trading Capital` · `Switch to Live` · `Switch to View Only` · `Sell All Positions` · `Allow new buys again` (only if killed)
 - Trading capital help: `This saved dollar figure is snapshotted onto each new position. Changing it does not alter open positions. Quick fills use the current balance ({balanceUsd or "n/a"}).`
+- Slider readout: `{percent} · {dollars}` (`n/a` for the percent when the balance is not positive). The range is labeled `Trading capital percent of current balance`.
 - Warning: `Trading capital is above the current balance. New trades will use {effectiveUsd}.`
 - Warning: `Open exposure ({exposureUsd}) is at or above Trading capital. New buys are paused until exposure is back under.`
-- Quick-fill button: `{pct}% ({dollars with two decimals})`
 - Heading: `Robinhood`
 - Status: `Connected to {maskedAccount or "your account"}.` · `Not connected.` · error uses `robinhoodError` or `Robinhood could not be read.`
 - Buttons: `Reconnect Robinhood` · `Disconnect Robinhood`
@@ -524,7 +527,7 @@ All strings below are **verbatim** from `src/client/App.tsx` and `SESSION_HELP` 
 - When enrolled: `An authenticator app is set up. You can sign in or confirm with a code from the app, or with a backup code.`
 - Buttons: `Turn off authenticator app` · `Set up again`
 - Failures: `Could not start authenticator setup.` · `Could not confirm the authenticator.` · `Could not turn off the authenticator.`
-- Footer: `Saving caps, editing the Top 10 or a rule, marking a rule Proven, and switching to Live or connecting Robinhood each ask for the passkey again, or an authenticator code if you have set one up. Sell All Positions asks for a confirm step, not a passkey. It sells simulated positions only and does not place or cancel real Robinhood orders.`
+- Footer: `Setting Trading capital, editing the Top 10 or a rule, marking a rule Proven, and switching to Live or connecting Robinhood each ask for the passkey again, or an authenticator code if you have set one up. Sell All Positions asks for a confirm step, not a passkey. It sells simulated positions only and does not place or cancel real Robinhood orders.`
 - SEC credit, under that footer, same sentence as [§6.4](#64-top-10).
 
 **Sell All confirm**
@@ -562,7 +565,8 @@ All strings below are **verbatim** from `src/client/App.tsx` and `SESSION_HELP` 
 - Filter chips, verbatim: `All` · `Active` · `Proven` · `Experimenting` · `Suggest approval` · `Suggest retire` · `Top scorers` · `Losing money` · `Recently triggered`. The three points chips are disabled. Search placeholder: `Search`. Button: `Customize` (same popover; Name and Actions stay locked).
 - Meta: `Buy rule` or `Sell rule` · signal ids joined by `", "` or `Uses Settings percentages`
 - Scorecard: `No trades yet.` or `Win rate {n% or —}. Avg profit {$x.xx or —}. Worst loss {$x.xx or —}. {n} trades.`
-- Buttons: `Edit / rename` · `Mark Proven` · `Move to Experimenting` · `Retire` · `History`
+- Table button: `Edit`
+- Name link opens the rule dialog. Dialog buttons: `Mark Proven` · `Move to Experimenting` · `Retire` · `History` · `Close`
 - Heading: `Edit rule` or `Create a rule`
 - Labels: `Name` · `Side` (options `Buy`, `Sell`, only when creating) · `Plain-English text`
 - Buttons: `Save changes` · `Create rule` · `Cancel`
@@ -577,6 +581,7 @@ All strings below are **verbatim** from `src/client/App.tsx` and `SESSION_HELP` 
   - Note: after auto-start, cron also cycles when **no** position is open. This sentence is slightly stale; see [§19](#19-doc-vs-code-mismatches).
 - Labels: `Equity`, `Cash`, `Daily loss` (value `{dailyLoss} / {dailyLossCap}`), `Orders today` (`{ordersToday} / {orderCap}`), `Quotes` (`Live` or `Recorded`), `Trading capital` (`{effectiveUsd}` plus ` (capped at the current balance)` when warned)
 - Banner: `Open exposure is at or above Trading capital. New buys wait until exposure is back under.`
+- The summary card (Equity, Cash, Daily loss, Orders today, Quotes, Trading capital, and the exposure notice) and the **Rules to run** card sit side by side from 983px up and stack below that.
 - Heading: `Rules to run` — checkbox per rule: `{name} ({status})`
 - Button: `Run check`
 - Positions heading: `Simulated positions`
@@ -800,6 +805,7 @@ Mark these clearly in any rebuild: they are **agreed product direction**, not pr
 - UI to **assign a sell rule** to an imported live position.
 - Using `get_equity_tradability` for overnight eligibility once the output contract is captured.
 - **Companies registry and Company Profile.** Every company the desk researches, watches, or trades, with when and why it was added, plus a profile screen of SEC filings and quarterly data. Not built. The `companies` table in [§8.6](#86-sec-company-names-sector-and-industry) is the CIK-keyed base; add columns, do not rename it.
+- **Ticker links to Company Profile** are deferred and are not built. Symbol cells stay plain text with the letter mark. Do not add the link until that screen exists.
 
 ---
 
@@ -914,7 +920,7 @@ CSRF: non-GET `/api/*` (except listed auth and callback paths) require the CSRF 
 | POST | `/api/kill` | Sell all sim + set killed (legacy path; UI uses `/api/sell-all`) |
 | POST | `/api/resume` | `killed = 0`, mode back to `view_only` |
 | POST | `/api/mode` | `{ mode: "view_only" or "live" }` |
-| POST | `/api/settings` | Save caps |
+| POST | `/api/settings` | Set Trading Capital (same settings payload) |
 | POST | `/api/top10` | `{ symbols: string[] }` |
 | GET | `/api/simulator` | Simulator view |
 | POST | `/api/simulator/cycle` | Run a sim cycle with optional `ruleIds` |
@@ -1045,6 +1051,7 @@ Dates are America/Chicago unless noted. All of the following were agreed 13 Nove
 | 14 Nov 2026 | Recovery email sender moved off `noreply@ycashlabs.com` onto churncapital.com subdomains after an explicit go-ahead at 7:01 AM CST. From addresses are config-driven (`EMAIL_FROM`): dev `noreply@desk-dev.churncapital.com`, prod `noreply@desk.churncapital.com`, local `noreply@desk-dev.churncapital.com` (localhost still logs the link and does not send). The 15-minute recovery-link TTL is unchanged. Email Sending was onboarded for `desk.churncapital.com` (id `97bf52b3fced458f83e896afa90781bb`) and `desk-dev.churncapital.com` (id `1eeda3790f9546b1add78c2cd846ea0e`) at **7:03:10 AM CST**, adding only subdomain records: `cf-bounce.desk[.dev].churncapital.com` MX (`route1`/`route2`/`route3.mx.cloudflare.net`) and SPF (`v=spf1 include:_spf.mx.cloudflare.net ~all`), DKIM TXT at `cf-bounce._domainkey.desk[.dev].churncapital.com` (selector `cf-bounce`, so `d=desk[.dev].churncapital.com`), and `_dmarc.desk[.dev].churncapital.com` `v=DMARC1; p=reject;`. DNS status was `ready`. The `churncapital.com` apex iCloud+ records (MX `mx01`/`mx02.mail.icloud.com`, TXT `apple-domain=11ccpqOL0trL8Grc`, TXT `v=spf1 include:icloud.com ~all`, CNAME `sig1._domainkey`) were verified unchanged before and after via the zone DNS API and DoH. The apex itself had already been listed as an Email Sending domain since **6:59:34 AM CST** (id `cc2e89dc45ac49798f057a717fc08399`, return-path `cf-bounce.churncapital.com`, plus apex `_dmarc` `v=DMARC1; p=reject;`); this change did not alter or remove that earlier onboarding or those records. The `send_email` binding still only restricts the destination to `tom2258@gmail.com` (no sender restriction). `ZONE` remains `ycashlabs.com` as a fallback if `EMAIL_FROM` is unset. Dev Worker **`0ecc5067-a5ea-4efb-8d8e-89a197d2e945`** uploaded 7:06:43 AM CST (rollback `840beac0-…`). The owner confirmed the dev recovery email arrived and works at **7:11 AM CST**. Prod Worker **`f568be0e-3a0f-49cd-9f6b-ae25789ba895`** uploaded 7:11:48 AM CST after that confirmation (rollback `84d3fd56-e977-48bc-8ee7-50fcf610a549`, Time Travel bookmark `000001b7-00000004-00005123-e8b28e396fe85c0570671553d6010a71`, same bundle as current dev). The prod recovery send was not triggered here (Access); the owner can test it. Apex iCloud+ records were unchanged after the prod upload. The live gate stayed `"0"`. See [HANDOVER.md](HANDOVER.md). |
 | 14 Nov 2026 | SEC company names, sector, and industry from the public company files only ([§8.6](#86-sec-company-names-sector-and-industry)). Migration `0008_companies.sql` adds `companies` keyed by CIK and the one-row `sec_sync` clock. The exchange file is fetched at most daily, submissions at most weekly, and only for tickers the app shows (at most 40). Steady-state D1 writes are 1 per day; the weekly SIC refresh adds one write per shown company on that one tick. `SEC_USER_AGENT` defaults to `churntop10 tom@churncapital.com`. A failed SEC read does not fail the cron or the table. No logo API, no Nasdaq host, no CSP change, no trading or auth change. `ALLOW_LIVE_TRADING` stays `"0"`. Deployed the same morning after the owner said to merge and take it to production (8:25 AM CST). Merge `9438cd90fbdb31149c5e1f2c3ac41de01d74f1dd`. Dev Worker **`c7bee883-8b6d-4d62-b234-46cb8429f023`** uploaded 8:33:23 AM CST (rollback `04450417-…`, `0008` applied 8:33:05 AM CST, pre-`0008` bookmark `000001da-00000000-00005123-f7791bb60da1cc4b5225ec9a80cb4fc3`). Prod Worker **`3445cbe7-ce2a-427a-a85e-3b62ab1a51e4`** uploaded 8:37:23 AM CST (rollback `001408dd-…`, `0008` applied 8:37:07 AM CST, pre-`0008` bookmark `000001ca-00000006-00005123-72b7d39abe2af0593d40ca43b1e3a9b5`, same bundle). First ticks wrote 10 companies plus `sec_sync` (~11 rows); no SEC 403. The Companies registry and Company Profile screen are still not built. |
 | 14 Nov 2026 | Visual only. The Customize chooser is a compact popover (Sector and Industry included). Checkboxes and radios are 16px and are no longer stretched by the text-field rule. Quote up/down/flat colors match the Yahoo Finance tokens of this date, including the heatmap scale; `--good`, buttons, badges, headings, and letter-mark hues stay. Settings groups are cards, with destructive actions in a Danger zone. No trading, auth, cron, or env change. `ALLOW_LIVE_TRADING` stays `"0"`. Deployed the same morning after the owner said to merge and take it to production (8:25 AM CST), after PR #16 was already on both environments. Merge `2c284081253a599b2fbe5fbbdd79b04333a0de34`. Dev Worker **`4a41aca0-d600-43bf-9b64-9f4f564f7a77`** uploaded 8:42:48 AM CST (rollback `c7bee883-…`, bookmark `000001de-00000000-00005123-c853eb2ee9df70d6f79e01afbe2f82e3`). Prod Worker **`8bd7cbec-f67b-47fd-9806-41964ba09a1f`** uploaded 8:47:00 AM CST (rollback `3445cbe7-…`, bookmark `000001cc-00000008-00005123-d81bf0f20c8eef26122a652259593dee`, same bundle). No migration. See [HANDOVER.md](HANDOVER.md). |
+| 14 Nov 2026 | UI polish, not deployed in this change (the owner deploys after merge). Site-wide component rule: one style per component unless a screen states an exception. Ticker cells drop the bordered chip and stay left-aligned. Signed moving values use plain `--up` / `--down` / `--flat` text, including change, change %, P&L, and signed target/stop percents; heatmap cells keep their step ink. Buttons share one light/soft fill in both themes; red is only the Danger zone actions. **Edit / rename** is **Edit**. Simulator summary and Rules to run sit side by side on wide screens. Simulated and live positions are one dense table with trades expanded on demand and one Edit dialog for capital, target, and stop (same capital and exits APIs). Trading capital uses a 0–100% slider; the save button is **Set Trading Capital**. Settings and Review hide the account strip and the broker-gate banner. Nav order adds Live Positions and moves Rules above Settings. The Rules table action is Edit; the name opens the signals dialog. Account Summary’s session card is a 24-hour local-time timeline. Ticker links to Company Profile stay deferred. No D1 migration, no auth or broker change, `ALLOW_LIVE_TRADING` stays `"0"`. |
 
 ---
 
@@ -1072,7 +1079,7 @@ These are accurate observations of the current tree. A rebuild should implement 
 8. **MCP tools** `get_equity_tradability` and `get_pnl_trade_history` have schemas but are not called. `cancel_equity_order` is always refused.
 9. **[spec-v2.md](spec-v2.md)** still opens with “Five screens”; v3 added Review (six). This file is authoritative.
 10. **[sessions.md](sessions.md)** says “Every entry is a limit order for whole shares, priced at the ask.” **Regular hours allow fractional** shares. Entries are limits priced at the ask; size is whole-share only off regular hours.
-11. **[ACCESS.md](ACCESS.md)** still says “kill switch” and that “changing caps” always asks for the passkey. Sell All is the current name and uses confirm, not a passkey. **Settings → Save caps** is step-up; **Edit capital** on a position is confirm only, no step-up.
+11. **[ACCESS.md](ACCESS.md)** still says “kill switch” and that “changing caps” always asks for the passkey. Sell All is the current name and uses confirm, not a passkey. **Settings → Set Trading Capital** is step-up; the position Edit dialog’s capital post is confirm only, and its exits post is still step-up.
 12. **[prod.md](prod.md)** originally described `tickSimulator` returning when there were no open sim positions; that was true of the v3 Worker before PR #8. Prod now runs the auto-start plus trade_signals / signal-views / TOTP Worker (`eff70b4a-…`; rollback `851a1db9-…`). Keep prod.md aligned with [HANDOVER.md](HANDOVER.md).
 13. **Creating a rule in the UI** sends an empty signal list. Draft seeds have signals; user-created rules do not get a signal picker yet.
 14. **Rule status in the stamp** is lowercase raw (`experimenting`), not “Experimenting.”

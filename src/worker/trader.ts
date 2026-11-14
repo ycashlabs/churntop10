@@ -983,6 +983,7 @@ export class AccountTrader extends DurableObject<Env> {
         tradingCapital: formatUsd(position.tradingCapitalSnapshot),
         profitTargetPct: position.profitTargetPct,
         stopLossPct: position.stopLossPct,
+        source: position.source === "imported" ? "imported" : "app",
         buyRule: buy ? `${buy.name} v${buy.version}` : labelBuyRule(position),
         sellRule: sell ? `${sell.name} v${sell.version}` : undefined,
         company: this.companyFor(companies, position.symbol),

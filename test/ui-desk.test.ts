@@ -258,8 +258,17 @@ describe("strip figures and quote change", () => {
       top10: [],
       positions: [],
     } as Summary;
+    summary.positions = [position("TSLL", "live", "+$0.40")];
     const offline = stripModelFromSummary(summary, Date.parse("2026-11-14T15:00:00Z"));
     expect(offline.tiles.find((tile) => tile.id === "equity")?.value).toBe("Not connected");
+    expect(offline.tiles.find((tile) => tile.id === "open")?.value).toBe("1");
+    summary.robinhoodStatus = "error";
+    summary.robinhoodError = "Robinhood is connected, but reading the account failed: timeout";
+    const errored = stripModelFromSummary(summary, Date.parse("2026-11-14T15:00:00Z"));
+    expect(errored.tiles.find((tile) => tile.id === "equity")?.value).toBe("Not connected");
+    expect(errored.tiles.find((tile) => tile.id === "equity")?.title).toMatch(/reading the account failed/);
+    summary.robinhoodStatus = "not_connected";
+    summary.robinhoodError = undefined;
     expect(offline.maskedAccount).toBeNull();
     expect(JSON.stringify(offline)).not.toContain("SIM0000999");
     summary.robinhoodStatus = "connected";
