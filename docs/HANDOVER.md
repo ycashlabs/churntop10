@@ -6,7 +6,7 @@ Nothing in this note is a secret value. Never paste `TOKEN_KEY`, OAuth tokens, o
 
 Read [DESIGN.md](DESIGN.md) in full first, then this file. Safety rules are in [../AGENTS.md](../AGENTS.md).
 
-Last updated: 13 November 2026, 7:56 PM CST, America/Chicago.
+Last updated: 13 November 2026, 8:37 PM CST, America/Chicago.
 
 ## Owner and approval
 
@@ -38,7 +38,7 @@ Cloudflare account `f59b2545f5783d93b378006f3eb10bb4`. Zone `ycashlabs.com`. Acc
 | `ACCESS_ENFORCE` | `1` (deployed); `0` only in top-level local `wrangler.jsonc` | `1` |
 | `TOKEN_KEY` | its own Worker secret | its own Worker secret; never reuse dev’s |
 | `AUTH_KEY` | its own Worker secret, set **2:13:30 PM CST** 13 Nov 2026 | its own Worker secret, set **7:49:54 PM CST** 13 Nov 2026; never reuse dev’s |
-| `EMAIL` | `send_email` binding live, `destination_address` `tom2258@gmail.com`, from `noreply@ycashlabs.com`. `ycashlabs.com` is **not yet onboarded** to Email Sending (no `cf-bounce` DNS records as of 2:14 PM CST; apex SPF is `v=spf1 -all`). | same binding live on this Worker; recovery will return `503` until the domain is onboarded |
+| `EMAIL` | `send_email` binding live, `destination_address` `tom2258@gmail.com`, from `noreply@ycashlabs.com`. `ycashlabs.com` was **onboarded** to Email Sending (DNS verified **8:29 PM CST** 13 Nov 2026): `cf-bounce.ycashlabs.com` MX (`route1`/`route2`/`route3.mx.cloudflare.net`) and SPF (`v=spf1 include:_spf.mx.cloudflare.net ~all`), DKIM TXT at `cf-bounce._domainkey.ycashlabs.com` (selector `cf-bounce`, so `d=ycashlabs.com`). Apex `_dmarc` remains `v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s`; apex SPF remains `v=spf1 -all`. Strict DKIM alignment should pass with From `noreply@ycashlabs.com`; strict SPF alignment likely will not (envelope typically `cf-bounce.ycashlabs.com`), so DMARC can still pass on DKIM. No `_dmarc.cf-bounce` record; the apex `sp=reject` covers that subdomain. One recovery email on https://top10-dev.ycashlabs.com was sent to `tom2258@gmail.com` at **8:35:07 PM CST** (owner confirmed arrival in Gmail at **8:36 PM CST**, no errors). Dev D1 then had exactly one unused hashed magic link and one `recovery` audit row; credentials (1) and sessions (3, none recovery) were unchanged from the pre-send snapshot. Worker logs had no `recovery_email_failed`; the POST `/api/auth/recovery` invocation ended `ok`. The link was not consumed. | same binding live on this Worker (same script SHA-256 as current dev). Recovery can send now that the domain is onboarded. No recovery was triggered on prod (0 magic links, 0 recovery audit rows, no `recovery` Worker logs in the 8:00–9:00 PM CST window). |
 | `HOSTNAME` | `top10-dev.ycashlabs.com` | `top10.ycashlabs.com` |
 
 Local: `npm run dev` on http://localhost:8787, `ACCESS_ENFORCE=0`, `ALLOW_LIVE_TRADING=0`. Never upload the top-level local config.
@@ -114,7 +114,7 @@ Redirect is loopback `http://127.0.0.1:47621/callback` only. Do this on **prod**
 
 - [PR #12](https://github.com/ycashlabs/churntop10/pull/12) is **merged and on prod**. No further prod promotion is pending for it. The live gate stays `"0"`.
 - **`cursor/spec-v2`**: deleted from the remote at **4:07 PM CST** 13 Nov 2026 at the owner's request. Closed unmerged [PR #6](https://github.com/ycashlabs/churntop10/pull/6) still holds the three docs commits (`dbbf4c8`, `b9d7e6d`, `88920a5`).
-- **Cloudflare Email Sending (waiting on the owner)**: the `EMAIL` binding is on `churntop10-dev` and `churntop10-prod`, but `ycashlabs.com` is not onboarded, so recovery mail cannot actually send yet. Checked 2:14 PM CST: no `cf-bounce.ycashlabs.com` MX/TXT, no `cf-bounce._domainkey.ycashlabs.com` TXT, apex SPF is `v=spf1 -all`, and `_dmarc.ycashlabs.com` is `v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s`. Email Sending list APIs returned 403/404 (this connection lacks Email Sending scopes). Until the domain is onboarded, `/api/auth/recovery` on dev and prod should return `503` `Recovery email could not be sent.` rather than claiming `delivery: "email"`. Owner steps: Cloudflare dashboard → **Compute** → **Email Service** → **Email Sending** → **Onboard Domain** → choose `ycashlabs.com` → review and accept the DNS records Cloudflare will add on the `cf-bounce` subdomain (MX, SPF, DKIM, and `_dmarc`) → **Done**. DNS usually lands in 5–15 minutes (up to 24 hours). Then try recovery on https://top10-dev.ycashlabs.com and confirm a message from `noreply@ycashlabs.com` arrives at `tom2258@gmail.com`.
+- **Cloudflare Email Sending**: onboarded for `ycashlabs.com` (DNS verified **8:29 PM CST** 13 Nov 2026). The owner triggered one recovery email on **dev** at **8:35:07 PM CST** and confirmed it arrived in Gmail at **8:36 PM CST** with no errors. Prod shares the same Worker script; no recovery was sent on prod. See the `EMAIL` row above for the DNS records and the strict-SPF / DKIM alignment note. Email Sending list APIs still return 403/404 (this connection lacks Email Sending scopes).
 - Access One-time PIN is already on both apps (1:22 PM CST 13 Nov 2026); no further Access change is pending.
 - No further prod promotion is pending for PR #11 or PR #12.
 - **GitHub `workflow` scope**: required to add the dedicated `design` CI job in `.github/workflows/ci.yml`. Until then, `npm test` runs the check (see [ci-design-job.pending.yml](ci-design-job.pending.yml)).
