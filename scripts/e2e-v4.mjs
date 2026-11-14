@@ -90,11 +90,12 @@ if (!opened.includes("Account Summary")) {
   }
 }
 
-await mustInclude("summary-nav", "Account Summary", "Top 10", "Rules", "Simulator", "Settings", "Review");
+await mustInclude("summary-nav", "Account Summary", "Top 10", "Live Positions", "Rules", "Simulator", "Settings", "Review");
 await mustNotInclude("summary-leak", "SIM0000999", "544784028", "5UD70362");
+await go("/positions");
 await page.waitForFunction(() => document.body.innerText.includes("TSLL") && document.body.innerText.includes("imported/manual"), { timeout: 20000 }).catch(async (err) => {
   await shot("00-no-imported-position");
-  throw new Error("Account Summary did not show the imported TSLL fixture: " + (await text()).slice(0, 2000) + " / " + err);
+  throw new Error("Live Positions did not show the imported TSLL fixture: " + (await text()).slice(0, 2000) + " / " + err);
 });
 await mustInclude("live-import", "Live positions", "TSLL", "imported/manual", "$11.05");
 await shot("01-account-summary-imported-tsll");

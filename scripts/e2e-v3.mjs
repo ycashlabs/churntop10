@@ -97,7 +97,7 @@ if (!opened.includes("Account Summary")) {
     throw new Error("auth did not reach Account Summary: " + after.slice(0, 1000) + " / " + err);
   }
 }
-await mustInclude("summary", "Account Summary", "Top 10", "Rules", "Simulator", "Settings", "Review");
+await mustInclude("summary", "Account Summary", "Top 10", "Live Positions", "Rules", "Simulator", "Settings", "Review");
 await mustNotInclude("summary", "SIM0000999", "544784028", "5UD70362", "Kill switch", "simulator cash", "Simulated cash");
 await shot("01-account-summary");
 
@@ -124,7 +124,7 @@ await mustInclude("top10", "AAPL", "MSFT", "NVDA");
 await shot("02-top10");
 
 await go("/settings");
-await page.waitForFunction(() => document.body.innerText.includes("Trading capital, dollars") && document.body.innerText.includes("Save caps"));
+await page.waitForFunction(() => document.body.innerText.includes("Trading capital, dollars") && document.body.innerText.includes("Set Trading Capital"));
 await mustInclude("settings-capital", "Trading capital, dollars", "Daily loss stop, percent of Trading capital", "any positive percent, up to 100");
 
 const presetClicked = await page.evaluate(() => {
@@ -151,7 +151,7 @@ await page.evaluate(() => {
   setter?.call(field, "12000");
   field.dispatchEvent(new Event("input", { bubbles: true }));
 });
-await button("Save caps");
+await button("Set Trading Capital");
 await page.waitForFunction(() => {
   if (document.body.innerText.includes("Passkey confirmation failed")) throw new Error("save caps failed");
   const field = [...document.querySelectorAll("label")].find((item) => item.innerText.includes("Trading capital, dollars"))?.querySelector("input");

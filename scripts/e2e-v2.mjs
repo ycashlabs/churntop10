@@ -89,7 +89,7 @@ if (!opened.includes("Account Summary")) {
     throw new Error("auth did not reach Account Summary: " + after.slice(0, 1000) + " / " + err);
   }
 }
-await mustInclude("summary", "Account Summary", "Top 10", "Rules", "Simulator", "Settings");
+await mustInclude("summary", "Account Summary", "Top 10", "Live Positions", "Rules", "Simulator", "Settings");
 await mustNotInclude("summary", "SIM0000999", "544784028", "5UD70362", "Kill switch", "simulator cash", "Simulated cash");
 await shot("01-account-summary");
 
@@ -120,9 +120,9 @@ await page.waitForFunction(() => document.body.innerText.includes("First buy on 
 await mustInclude("rules", "Experimenting", "First buy on strength");
 await shot("03-rules");
 await page.evaluate(() => {
-  const article = [...document.querySelectorAll("article")].find((item) => item.innerText.includes("First buy on strength"));
-  if (!article) throw new Error("no First buy article");
-  const found = [...article.querySelectorAll("button")].find((item) => item.textContent?.trim() === "Edit / rename");
+  const row = [...document.querySelectorAll("tr")].find((item) => item.innerText.includes("First buy on strength"));
+  if (!row) throw new Error("no First buy row");
+  const found = [...row.querySelectorAll("button")].find((item) => item.textContent?.trim() === "Edit");
   if (!found) throw new Error("no Edit on First buy");
   found.click();
 });
@@ -203,7 +203,7 @@ await page.waitForFunction(() => {
 await shot("04-simulator");
 
 await go("/settings");
-await page.waitForFunction(() => document.body.innerText.includes("Save caps"));
+await page.waitForFunction(() => document.body.innerText.includes("Set Trading Capital"));
 await mustInclude("settings", "Profit target", "Stop-loss", "Daily loss", "Order cap", "Sell All Positions", "no buy amount");
 await page.$$eval("input[type='number']", (inputs) => {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
@@ -216,7 +216,7 @@ await page.$$eval("input[type='number']", (inputs) => {
     inputs[3].dispatchEvent(new Event("input", { bubbles: true }));
   }
 });
-await button("Save caps");
+await button("Set Trading Capital");
 await page.waitForFunction(() => {
   if (document.body.innerText.includes("Passkey confirmation failed")) throw new Error("save caps failed");
   return document.querySelector("input")?.value === "1.5";

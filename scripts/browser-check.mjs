@@ -41,14 +41,14 @@ await page.waitForFunction(() => document.body.innerText.includes("broker gate i
 await page.evaluate(() => document.querySelector("a[href='/top10']")?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })));
 await page.waitForFunction(() => document.body.innerText.includes("$355.00"));
 await page.evaluate(() => document.querySelector("a[href='/settings']")?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })));
-await page.waitForFunction(() => document.body.innerText.includes("Save caps"));
+await page.waitForFunction(() => document.body.innerText.includes("Set Trading Capital"));
 await page.$eval("input", (input) => {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
   setter?.call(input, "1.5");
   input.dispatchEvent(new Event("input", { bubbles: true }));
 });
 await page.evaluate(() => {
-  const button = [...document.querySelectorAll("button")].find((item) => item.textContent === "Save caps");
+  const button = [...document.querySelectorAll("button")].find((item) => item.textContent === "Set Trading Capital");
   button?.click();
 });
 await page.waitForFunction(() => !document.body.innerText.includes("Confirm with your passkey") && document.querySelector("input")?.value === "1.5");
