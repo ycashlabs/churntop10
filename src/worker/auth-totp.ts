@@ -1,6 +1,7 @@
 import { applyTotpAttempt, base32Decode, isTotpLocked, otpauthUri, verifyTotp, type TotpLockState } from "../lib/totp.js";
 import { decryptString, importAuthKey, sha256Hex } from "./crypto.js";
 import type { Env } from "./env.js";
+import { recoveryOrigin } from "../lib/hosts.js";
 import type { AppContext } from "./http.js";
 
 export type TotpRow = {
@@ -95,8 +96,8 @@ export async function consumeBackupCode(c: AppContext, code: string): Promise<To
   return { ok: true, step: 0, ownerId: owner.id };
 }
 
-export function recoveryLink(url: URL, token: string): string {
-  const link = new URL("/api/auth/recovery/consume", url.origin);
+export function recoveryLink(env: Env, requestUrl: URL, token: string): string {
+  const link = new URL("/api/auth/recovery/consume", recoveryOrigin(env, requestUrl));
   link.searchParams.set("token", token);
   return link.toString();
 }
@@ -105,7 +106,7 @@ export async function sendRecoveryEmail(env: Env, url: URL, token: string): Prom
   if (!env.EMAIL) return { ok: false, error: "Recovery email could not be sent." };
   const to = env.OWNER_EMAIL.trim().toLowerCase();
   if (to !== "tom2258@gmail.com") return { ok: false, error: "Recovery email could not be sent." };
-  const link = recoveryLink(url, token);
+  const link = recoveryLink(env, url, token);
   const text = `Use this link within 15 minutes to replace your passkey:\n${link}\n\nIf you did not ask for this, you can ignore the email.`;
   const html = `<p>Use this link within 15 minutes to replace your passkey:</p><p><a href="${link}">Replace your passkey</a></p><p>If you did not ask for this, you can ignore the email.</p>`;
   try {

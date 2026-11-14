@@ -13,6 +13,7 @@ Living snapshot of ids and pending decisions: [HANDOVER.md](HANDOVER.md). Nothin
 - The Cloudflare account is on **Workers Paid**. No Robinhood orders were placed. The live gate stayed `"0"`.
 - Existing NVDA sim trades now have `trade_signals` rows from the approved backfill (owner go-ahead 8:43 AM CST). Starter `3989afa2-7976-4b28-b703-4c5e0352a9a6` (1 @ 169.27 at 7:55:30 AM CST) and add `5aa49ca9-f1c4-4622-aef6-8e1f8f4a0359` (4 @ 169.63 at 8:00:30 AM CST) each have **3** rows including name and reason. A dry-run with name and reason planned the same 6 rows (values, thresholds, and fired flags unchanged from the earlier PR #9 dry-run); `apply=true` inserted 6 in the 8:45 AM CST window; a rerun planned 0 (`alreadyHadSignals`). Imported live TSLL is unchanged. See HANDOVER for the stored row values.
 - Access application `Churn Top 10 prod` (`8f553625-0283-41e0-8a63-c43789e8c3a5`), team `dawn-rice-07a4`, audience `b05d3bc57044f2fd02b7e9666d7e61a18e236784bdcbda9ea8322b9d6fe14517`. Owner only: `tom2258@gmail.com`. No bypass, no service token.
+- **Hostname:** prod stays at https://top10.ycashlabs.com. A later move to https://desk.churncapital.com needs an explicit go-ahead. Dev is moving first; see [HANDOVER.md](HANDOVER.md) for the planned prod cutover steps. This file is not a go-ahead.
 
 The section below is the earlier PR #8 / v3 verification. Prefer the current section and HANDOVER when they disagree.
 

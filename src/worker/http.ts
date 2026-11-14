@@ -3,7 +3,10 @@ import { verifyAccessJwt } from "../lib/access.js";
 import { applySecurityHeaders, hostCookie } from "../lib/headers.js";
 import { nextBucket, takeMemoryBucket } from "../lib/rate.js";
 import { randomToken, sha256Hex } from "./crypto.js";
+import { allowHost, recoveryOrigin, rpFromUrl } from "../lib/hosts.js";
 import type { Env } from "./env.js";
+
+export { allowHost, recoveryOrigin, rpFromUrl };
 
 export type AppContext = Context<{ Bindings: Env }>;
 
@@ -18,16 +21,6 @@ export function readCookie(header: string | undefined, name: string): string | u
     if (key === name) return decodeURIComponent(rest.join("="));
   }
   return undefined;
-}
-
-export function allowHost(env: Env, hostname: string): boolean {
-  if (env.ENVIRONMENT === "prod") return hostname === "top10.ycashlabs.com";
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "top10-dev.ycashlabs.com";
-}
-
-export function rpFromUrl(url: URL): { origin: string; rpID: string } {
-  if (url.hostname === "localhost") return { origin: url.origin, rpID: "localhost" };
-  return { origin: url.origin, rpID: url.hostname };
 }
 
 const jwksCache = new Map<string, { keys: JsonWebKey[]; expires: number }>();

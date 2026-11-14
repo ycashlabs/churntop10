@@ -6,7 +6,7 @@ Nothing in this note is a secret value. Never paste `TOKEN_KEY`, OAuth tokens, o
 
 Read [DESIGN.md](DESIGN.md) in full first, then this file. Safety rules are in [../AGENTS.md](../AGENTS.md).
 
-Last updated: 13 November 2026, 8:37 PM CST, America/Chicago.
+Last updated: 14 November 2026, 3:30 AM CST, America/Chicago.
 
 ## Owner and approval
 
@@ -20,16 +20,16 @@ Last updated: 13 November 2026, 8:37 PM CST, America/Chicago.
 
 ## Environments and resource ids
 
-Cloudflare account `f59b2545f5783d93b378006f3eb10bb4`. Zone `ycashlabs.com`. Access team `dawn-rice-07a4`. Cron on both Workers: `*/5 * * * *`. Durable Object `AccountTrader`, idFromName `"owner"`, namespace id (prod) `5c0d19fe80334705a5e6c730b07ecb91`.
+Cloudflare account `f59b2545f5783d93b378006f3eb10bb4`. Zones `churncapital.com` (`f09ccbd7eefc0bba88ac60412282313b`) and `ycashlabs.com` (`66b09838eac0a3ca85925d0eccbb8da9`). Access team `dawn-rice-07a4`. Cron on both Workers: `*/5 * * * *`. Durable Object `AccountTrader`, idFromName `"owner"`, namespace id (prod) `5c0d19fe80334705a5e6c730b07ecb91`.
 
 | | Dev | Prod |
 | --- | --- | --- |
 | Worker | `churntop10-dev` | `churntop10-prod` |
-| URL | https://top10-dev.ycashlabs.com | https://top10.ycashlabs.com |
+| URL | https://desk-dev.churncapital.com (canonical). https://top10-dev.ycashlabs.com stays attached during the move. | https://top10.ycashlabs.com. Planned later, after go-ahead: https://desk.churncapital.com. |
 | Domain type | Workers Custom Domain (not a zone route) | same |
 | D1 name / id | `churntop10-dev` / `7f0a12d3-f689-4a86-b30d-b349bdd77736` | `churntop10-prod` / `b2e4f00d-c7a2-41a6-a75f-12a3043ca20e` |
 | R2 | `churntop10-audit-dev` | `churntop10-audit-prod` |
-| Access app | `Churn Top 10 dev` (`d0a5f257-6f03-4bfc-b8a4-d104a7180e06`) | `Churn Top 10 prod` (`8f553625-0283-41e0-8a63-c43789e8c3a5`) |
+| Access app | `Churn Top 10 dev` (`d0a5f257-6f03-4bfc-b8a4-d104a7180e06`), destinations `desk-dev.churncapital.com` and `top10-dev.ycashlabs.com` | `Churn Top 10 prod` (`8f553625-0283-41e0-8a63-c43789e8c3a5`), destination still only `top10.ycashlabs.com` until the prod cutover |
 | Access audience | `3826fb9770402e73a472a3e3519bcdbd4cdcbf79cc695141d3ffb9cdd8a2cdaa` | `b05d3bc57044f2fd02b7e9666d7e61a18e236784bdcbda9ea8322b9d6fe14517` |
 | Policy | Emails, `tom2258@gmail.com` only. No bypass, no service token, no everyone. | same |
 | Access `allowed_idps` | One-time PIN `9f7436ed-…` and Cloudflare IdP `8a3b677e-…`; `auto_redirect_to_identity` is `false` (set 1:22 PM CST 13 Nov 2026). | same |
@@ -39,7 +39,9 @@ Cloudflare account `f59b2545f5783d93b378006f3eb10bb4`. Zone `ycashlabs.com`. Acc
 | `TOKEN_KEY` | its own Worker secret | its own Worker secret; never reuse dev’s |
 | `AUTH_KEY` | its own Worker secret, set **2:13:30 PM CST** 13 Nov 2026 | its own Worker secret, set **7:49:54 PM CST** 13 Nov 2026; never reuse dev’s |
 | `EMAIL` | `send_email` binding live, `destination_address` `tom2258@gmail.com`, from `noreply@ycashlabs.com`. `ycashlabs.com` was **onboarded** to Email Sending (DNS verified **8:29 PM CST** 13 Nov 2026): `cf-bounce.ycashlabs.com` MX (`route1`/`route2`/`route3.mx.cloudflare.net`) and SPF (`v=spf1 include:_spf.mx.cloudflare.net ~all`), DKIM TXT at `cf-bounce._domainkey.ycashlabs.com` (selector `cf-bounce`, so `d=ycashlabs.com`). Apex `_dmarc` remains `v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s`; apex SPF remains `v=spf1 -all`. Strict DKIM alignment should pass with From `noreply@ycashlabs.com`; strict SPF alignment likely will not (envelope typically `cf-bounce.ycashlabs.com`), so DMARC can still pass on DKIM. No `_dmarc.cf-bounce` record; the apex `sp=reject` covers that subdomain. One recovery email on https://top10-dev.ycashlabs.com was sent to `tom2258@gmail.com` at **8:35:07 PM CST** (owner confirmed arrival in Gmail at **8:36 PM CST**, no errors). Dev D1 then had exactly one unused hashed magic link and one `recovery` audit row; credentials (1) and sessions (3, none recovery) were unchanged from the pre-send snapshot. Worker logs had no `recovery_email_failed`; the POST `/api/auth/recovery` invocation ended `ok`. The link was not consumed. | same binding live on this Worker (same script SHA-256 as current dev). Recovery can send now that the domain is onboarded. No recovery was triggered on prod (0 magic links, 0 recovery audit rows, no `recovery` Worker logs in the 8:00–9:00 PM CST window). |
-| `HOSTNAME` | `top10-dev.ycashlabs.com` | `top10.ycashlabs.com` |
+| `HOSTNAME` | `desk-dev.churncapital.com` (recovery links use `https://$HOSTNAME`) | `top10.ycashlabs.com` until the prod cutover |
+| `ALLOWED_HOSTS` | `top10-dev.ycashlabs.com` (comma-separated aliases still served by this Worker) | empty until the prod cutover, then `top10.ycashlabs.com` while both names are live |
+| `ZONE` | `ycashlabs.com` (From address `noreply@ycashlabs.com`; Email Sending stays on this zone) | same |
 
 Local: `npm run dev` on http://localhost:8787, `ACCESS_ENFORCE=0`, `ALLOW_LIVE_TRADING=0`. Never upload the top-level local config.
 
@@ -96,6 +98,7 @@ Redirect is loopback `http://127.0.0.1:47621/callback` only. Do this on **prod**
 
 ### Dev
 
+- **Hostname move (14 Nov 2026):** canonical URL is https://desk-dev.churncapital.com. Workers Custom Domain on zone `churncapital.com`, same Worker `churntop10-dev`. https://top10-dev.ycashlabs.com stays attached. Access app `d0a5f257-6f03-4bfc-b8a4-d104a7180e06` covers both hostnames, still owner-only for `tom2258@gmail.com`, same `allowed_idps` (One-time PIN `9f7436ed-…` and Cloudflare IdP `8a3b677e-…`), no bypass or service tokens. `HOSTNAME` is `desk-dev.churncapital.com`, `ALLOWED_HOSTS` is `top10-dev.ycashlabs.com`, `ZONE` stays `ycashlabs.com`. Unauthenticated GET `/` and `/api/health` on the new host should HTTP 302 to `https://dawn-rice-07a4.cloudflareaccess.com/cdn-cgi/access/login/desk-dev.churncapital.com`. Passkeys are tied to the request hostname (RP ID), so the owner must sign in at desk-dev, register a new passkey, and re-add the authenticator app. The previous TOTP / recovery-email Worker **`a066fe5b-fbc7-4f02-ab31-372ae70e810b`** (script upload `c7e3d935-…`, 2:13:30 PM CST 13 Nov 2026) is the rollback target for this hostname upload. The new version id is recorded in this section after the dev deploy.
 - Worker `churntop10-dev` version **`a066fe5b-fbc7-4f02-ab31-372ae70e810b`**, current as of **2:13:30 PM CST** 13 Nov 2026 after `AUTH_KEY` was set (putting a secret counts as a deploy of the current script). The TOTP / recovery-email script itself was uploaded **2:13:16 PM CST** as version **`c7e3d935-6ba0-4a81-8b7b-fd038488c23b`** (etag `73f4286b5a1e4266358dab909ee4dbcdcfc4d329e423313b283a844fc568e7bf`, deployment `4290b4e7-3af0-441b-9c47-af1ecc9e4aca`, script SHA-256 `0eb9d0a83b08025e55ee3c6477c6f4d298f21d29942593b7b5a41243f0e63545`). Embedded UI, no `assets`, `TOKEN_KEY` kept, `AUTH_KEY` present as `secret_text` (value never logged), `EMAIL` `send_email` binding with `destination_address` `tom2258@gmail.com`, gate `"0"`, `ENVIRONMENT=dev`, `ACCESS_ENFORCE=1`. Cron `*/5 * * * *`. Rollback target for this TOTP upload: previous PR #11 Worker **`9898e11b-990a-404f-b9d3-c957c7a2dd46`** (uploaded 10:35:30 AM CST). Unauthenticated GET `/` and `/api/health` are still HTTP 302 to the team Access login (checked **2:13:44 PM CST** and again **7:50 PM CST** after the prod promotion).
 - D1 `churntop10-dev` now has `0001`–**`0007_auth_totp.sql`**. **`0007` applied 2:12:44 PM CST / 20:12:44 UTC** (sessions gained `auth_method` and `stepup_method`; `totp` and `totp_backup_codes` tables created). `0005` recorded 8:12:02 AM CST / 14:12:02 UTC; **`0006` recorded 8:39:59 AM CST / 14:39:59 UTC**. Pre-`0006` Time Travel bookmark: `000000ae-00000000-00005122-254240f2ae5bdf4d41da1bcdc73d2c12`. Pre-`0005` bookmark: `000000a8-00000000-00005122-26fed85f6a2eb2ec034474f8838928a3`. PRAGMA shows `trade_signals` columns `trade_id, signal_id, value, passed, threshold, name, reason`.
 - No Robinhood token. Holdings sync uses the recorded TSLL fixture (prod must never use that fixture).
@@ -115,10 +118,11 @@ Redirect is loopback `http://127.0.0.1:47621/callback` only. Do this on **prod**
 - [PR #12](https://github.com/ycashlabs/churntop10/pull/12) is **merged and on prod**. No further prod promotion is pending for it. The live gate stays `"0"`.
 - **`cursor/spec-v2`**: deleted from the remote at **4:07 PM CST** 13 Nov 2026 at the owner's request. Closed unmerged [PR #6](https://github.com/ycashlabs/churntop10/pull/6) still holds the three docs commits (`dbbf4c8`, `b9d7e6d`, `88920a5`).
 - **Cloudflare Email Sending**: onboarded for `ycashlabs.com` (DNS verified **8:29 PM CST** 13 Nov 2026). The owner triggered one recovery email on **dev** at **8:35:07 PM CST** and confirmed it arrived in Gmail at **8:36 PM CST** with no errors. Prod shares the same Worker script; no recovery was sent on prod. See the `EMAIL` row above for the DNS records and the strict-SPF / DKIM alignment note. Email Sending list APIs still return 403/404 (this connection lacks Email Sending scopes).
-- Access One-time PIN is already on both apps (1:22 PM CST 13 Nov 2026); no further Access change is pending.
+- Access One-time PIN is already on both apps (1:22 PM CST 13 Nov 2026). The dev app now also protects `desk-dev.churncapital.com` (this change). The prod app is unchanged.
+- **Prod hostname cutover** to https://desk.churncapital.com is **not started**. After an explicit go-ahead: attach the Workers Custom Domain (keep `top10.ycashlabs.com`), add it to the prod Access app destinations (keep the owner-only policy and the same `allowed_idps`), set `HOSTNAME=desk.churncapital.com` and `ALLOWED_HOSTS=top10.ycashlabs.com`, deploy to prod with `keep_bindings: ["secret_text"]`, then the owner re-enrolls a passkey and TOTP on the new RP ID. Do not do this until asked.
 - No further prod promotion is pending for PR #11 or PR #12.
 - **GitHub `workflow` scope**: required to add the dedicated `design` CI job in `.github/workflows/ci.yml`. Until then, `npm test` runs the check (see [ci-design-job.pending.yml](ci-design-job.pending.yml)).
-- Planned, not built: AI-created rules; rule points 0–100; weekly Saturday 9:00 AM CST review (owner routine, not a Worker cron); churncapital.com; live 24/5 engine; assign-sell-rule UI; Postgres / failover.
+- Planned, not built: AI-created rules; rule points 0–100; weekly Saturday 9:00 AM CST review (owner routine, not a Worker cron); live 24/5 engine; assign-sell-rule UI; Postgres / failover. The `churncapital.com` app hostname move is in progress on dev (`desk-dev`); prod waits for go-ahead.
 
 ## Routines
 
