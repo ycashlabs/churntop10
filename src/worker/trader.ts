@@ -13,9 +13,11 @@ import { applyOrderFill, labelBuyRule, recordsForPlacedLiveBuy, reconcileLiveHol
 import { equityOf, ordersToday, runSimulatorCycle, sellAllSimPositions, type SimEvent, type SimState } from "../lib/simulator.js";
 import { allRequiredSignalsFired, computeSignals, type SignalResult } from "../lib/signals.js";
 import { PROPOSAL_CAP } from "../lib/sim-persist.js";
+import { closedPnlSum, etDayStart, signedDayPnl, windowWinRate } from "../lib/desk-stats.js";
+import { quoteChange } from "../lib/quote-change.js";
 import { dailyLossAmount, validExitPct, validateNewBuy, type GuardContext } from "../lib/validator.js";
 import type { RuleSide, RuleStatus } from "../lib/rules.js";
-import type { SimulatorView, RuleView, RuleHistoryView, PositionView, ReviewScreen } from "../lib/api-types.js";
+import type { DeskFigures, SimulatorView, RuleView, RuleHistoryView, PositionView, ReviewScreen } from "../lib/api-types.js";
 import { decryptString, importTokenKey } from "./crypto.js";
 import type { Env } from "./env.js";
 import { effectiveTradingCapital, openExposure, tradingCapitalPresets, validTradingCapital } from "../lib/capital.js";
@@ -52,6 +54,12 @@ export class AccountTrader extends DurableObject<Env> {
   async summary(): Promise<Summary> {
     await this.seed();
     await this.syncLiveHoldings();
+    return this.buildSummary(await this.quoteBook());
+  }
+
+  /** Same figures as summary(), without syncLiveHoldings(). Reads only, plus the existing quote-failure audit. */
+  async summaryRead(): Promise<Summary> {
+    await this.seed();
     return this.buildSummary(await this.quoteBook());
   }
 
@@ -689,14 +697,19 @@ export class AccountTrader extends DurableObject<Env> {
       positions: await this.positionViews("live", book.quotes),
       top10: top10.map((symbol) => {
         const quote = book.quotes.find((item) => item.symbol === symbol);
+        const previous = quote?.previousClose?.status === "ok" ? quote.previousClose.value : undefined;
+        const delta = quote ? quoteChange(quote.last, previous) : null;
         return {
           symbol,
           bid: quote ? formatUsd(quote.bid) : "Unavailable",
           ask: quote ? formatUsd(quote.ask) : "Unavailable",
           last: quote ? formatUsd(quote.last) : "Unavailable",
           tradable: quote?.tradable ?? false,
+          change: delta?.change ?? null,
+          changePct: delta?.changePct ?? null,
         };
       }),
+      desk: await this.deskFigures("live", now, null, settings.day_start_equity, null),
     };
   }
 
@@ -705,6 +718,7 @@ export class AccountTrader extends DurableObject<Env> {
     const now = new Date();
     const parts = etParts(now);
     const equity = equityOf(state, book.quotes);
+    const dayPnl = signedDayPnl(equity, state.dayStartEquity);
     return {
       cash: formatUsd(state.cash),
       equity: formatUsd(equity),
@@ -739,12 +753,30 @@ export class AccountTrader extends DurableObject<Env> {
       })),
       events: events.map((event) => ({ action: event.action, detail: JSON.stringify(event.detail) })),
       proposals: state.proposals.slice(-PROPOSAL_CAP).reverse().map((proposal) => ({ symbol: proposal.symbol, verdict: proposal.verdict, message: proposal.message, at: proposal.createdAt })),
+      desk: await this.deskFigures("sim", now, equity, state.dayStartEquity, dayPnl),
+    };
+  }
+
+  private async deskFigures(mode: "live" | "sim", now: Date, equity: number | null, dayStartEquity: number, dayPnl: number | null): Promise<DeskFigures> {
+    const reviews = await (await this.store()).listReviews({ mode });
+    const rows = reviews.map((row) => ({ pnl: row.pnlDollars, closedAt: row.closedAt ?? null, exitType: row.exitType }));
+    const start = etDayStart(now);
+    const today = windowWinRate(rows, start, now.getTime());
+    const week = windowWinRate(rows, start - 6 * 24 * 60 * 60 * 1000, now.getTime());
+    return {
+      dayStartEquity,
+      dayPnl,
+      equityValue: equity,
+      closedPnl: closedPnlSum(rows),
+      winRateToday: today.rate,
+      winRate7d: week.rate,
     };
   }
 
   private async ruleViews(): Promise<RuleView[]> {
     const rules = await (await this.store()).currentRules();
     const cards = await (await this.store()).ruleScorecards(rules);
+    const lastTriggered = await this.lastTriggeredByFamily();
     return rules.map((rule) => ({
       id: rule.id,
       familyId: rule.familyId,
@@ -756,8 +788,20 @@ export class AccountTrader extends DurableObject<Env> {
       version: rule.version,
       createdAt: rule.createdAt,
       updatedAt: rule.updatedAt,
+      lastTriggeredAt: lastTriggered.get(rule.familyId) ?? null,
       scorecard: cards.get(rule.familyId) ?? { tradeCount: 0, winRate: null, avgProfit: null, worstLoss: null },
     }));
+  }
+
+  private async lastTriggeredByFamily(): Promise<Map<string, number>> {
+    const rows = (await this.env.DB.prepare(
+      `SELECT rv.rule_id AS family_id, MAX(t.created_at) AS last_at
+       FROM trades t
+       JOIN rule_versions rv ON rv.id = t.rule_version_id
+       WHERE t.rule_version_id IS NOT NULL
+       GROUP BY rv.rule_id`,
+    ).all<{ family_id: string; last_at: number }>()).results;
+    return new Map(rows.map((row) => [row.family_id, Number(row.last_at)]));
   }
 
   private robinhoodError: string | undefined;

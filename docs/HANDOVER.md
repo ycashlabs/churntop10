@@ -6,7 +6,7 @@ Nothing in this note is a secret value. Never paste `TOKEN_KEY`, OAuth tokens, o
 
 Read [DESIGN.md](DESIGN.md) in full first, then this file. Safety rules are in [../AGENTS.md](../AGENTS.md).
 
-Last updated: 14 November 2026, 7:12 AM CST, America/Chicago.
+Last updated: 14 November 2026, afternoon CST, America/Chicago. The look-and-feel client change is in git and is **not deployed**. Dev and prod Workers, D1, Access, and `ALLOW_LIVE_TRADING` (`"0"`) are unchanged from the 7:12 AM CST note below.
 
 ## Owner and approval
 
@@ -125,6 +125,7 @@ Redirect is loopback `http://127.0.0.1:47621/callback` only. Do this on **prod**
 
 ### Open work / pending owner decisions
 
+- **Look and feel is not deployed.** The desk UI (light/dark, account strip, dense Top 10 and Rules tables, sign-in card) and `GET /api/summary?read=1` (summary without `syncLiveHoldings`) are code only. No migration, no wrangler or env change, no Cloudflare change. `ALLOW_LIVE_TRADING` stays `"0"`. Dev Worker remains `0ecc5067-a5ea-4efb-8d8e-89a197d2e945`. Prod Worker remains `f568be0e-3a0f-49cd-9f6b-ae25789ba895`. Do not upload either until the owner asks.
 - [PR #13](https://github.com/churndev/churntop10/pull/13) is **merged** (`047d775d…`) **and on prod and dev**. Prod cutover to https://desk.churncapital.com is done (Worker `84d3fd56-…`, rollback `eff70b4a-…`). The live gate stays `"0"`. The owner still needs to re-enroll a passkey and authenticator app on https://desk.churncapital.com (issuer `churntop10`, label `churntop10:tom2258@gmail.com (desk.churncapital.com)`), and on desk-dev if not already done (`churntop10 Dev` / `churntop10 Dev:tom2258@gmail.com (desk-dev.churncapital.com)`).
 - [PR #12](https://github.com/churndev/churntop10/pull/12) is **merged and on prod**. No further prod promotion is pending for it. The live gate stays `"0"`.
 - **`cursor/spec-v2`**: deleted from the remote at **4:07 PM CST** 13 Nov 2026 at the owner's request. Closed unmerged [PR #6](https://github.com/churndev/churntop10/pull/6) still holds the three docs commits (`dbbf4c8`, `b9d7e6d`, `88920a5`).

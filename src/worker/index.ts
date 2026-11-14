@@ -334,6 +334,8 @@ app.use("/api/*", async (c, next) => {
 app.get("/api/summary", async (c) => {
   const limited = await rateLimit(c, "read", 120);
   if (limited) return limited;
+  const stub = trader(c) as unknown as AccountTrader;
+  if (c.req.query("read") === "1") return c.json(await stub.summaryRead());
   return c.json(await callTrader(c, "summary"));
 });
 
