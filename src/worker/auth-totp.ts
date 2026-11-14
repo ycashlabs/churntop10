@@ -1,6 +1,7 @@
 import { applyTotpAttempt, base32Decode, isTotpLocked, otpauthUri, totpAccount, totpIssuer, verifyTotp, type TotpLockState, type TotpUriConfig } from "../lib/totp.js";
 import { decryptString, importAuthKey, sha256Hex } from "./crypto.js";
 import type { Env } from "./env.js";
+import { recoveryFromAddress } from "../lib/email.js";
 import { recoveryOrigin } from "../lib/hosts.js";
 import type { AppContext } from "./http.js";
 
@@ -112,7 +113,7 @@ export async function sendRecoveryEmail(env: Env, url: URL, token: string): Prom
   try {
     await env.EMAIL.send({
       to,
-      from: { email: `noreply@${env.ZONE}`, name: "Churn Top 10" },
+      from: { email: recoveryFromAddress(env), name: "Churn Top 10" },
       subject: "Churn Top 10 recovery link",
       text,
       html,

@@ -4,7 +4,7 @@ The product contract is [docs/spec-v2.md](docs/spec-v2.md) (including the v3 sec
 
 This repository does not create Cloudflare resources and does not deploy. `npm run build` writes `dist/index.js`, an ES module Worker (`AccountTrader` is a named export, the default export is `fetch` + `scheduled`) with the built HTML, JS, and CSS embedded. The Worker serves that UI itself, so a deploy does not need a successful Workers assets-upload JWT. `dist/assets/` is still produced for local `wrangler dev` and as a fallback.
 
-Account `f59b2545f5783d93b378006f3eb10bb4`. Zones `churncapital.com` (canonical desk hosts) and `ycashlabs.com` (aliases and Email Sending).
+Account `f59b2545f5783d93b378006f3eb10bb4`. Zones `churncapital.com` (canonical desk hosts and recovery Email Sending on `desk` / `desk-dev`) and `ycashlabs.com` (aliases; previously also the recovery From domain).
 
 | | dev | prod |
 | --- | --- | --- |
@@ -84,7 +84,8 @@ The Worker reads these names. Dev values are shown. Prod sets `ENVIRONMENT` to `
 | Var | `plain_text` | `ACCESS_TEAM_DOMAIN` | dev `dawn-rice-07a4` (no `.cloudflareaccess.com` suffix) |
 | Var | `plain_text` | `ACCESS_AUD` | dev `3826fb9770402e73a472a3e3519bcdbd4cdcbf79cc695141d3ffb9cdd8a2cdaa` |
 | Var | `plain_text` | `OWNER_EMAIL` | `tom2258@gmail.com` |
-| Var | `plain_text` | `ZONE` | `ycashlabs.com` |
+| Var | `plain_text` | `ZONE` | `ycashlabs.com` (fallback only if `EMAIL_FROM` is unset) |
+| Var | `plain_text` | `EMAIL_FROM` | `noreply@desk-dev.churncapital.com` on dev; `noreply@desk.churncapital.com` on prod |
 | Var | `plain_text` | `HOSTNAME` | `desk-dev.churncapital.com` |
 | Var | `plain_text` | `ALLOWED_HOSTS` | `top10-dev.ycashlabs.com` on dev; `top10.ycashlabs.com` on prod (comma-separated aliases) |
 | Var | `plain_text` | `TOTP_ISSUER` | `churntop10 Dev` (prod `churntop10`; local `churntop10 Local`) |
@@ -150,6 +151,7 @@ Observability in this Wrangler version is logs at sampling rate 1 (`observabilit
     { "type": "plain_text", "name": "ACCESS_AUD", "text": "3826fb9770402e73a472a3e3519bcdbd4cdcbf79cc695141d3ffb9cdd8a2cdaa" },
     { "type": "plain_text", "name": "OWNER_EMAIL", "text": "tom2258@gmail.com" },
     { "type": "plain_text", "name": "ZONE", "text": "ycashlabs.com" },
+    { "type": "plain_text", "name": "EMAIL_FROM", "text": "noreply@desk-dev.churncapital.com" },
     { "type": "plain_text", "name": "HOSTNAME", "text": "top10-dev.ycashlabs.com" }
   ],
   "migrations": { "new_tag": "v1", "new_sqlite_classes": ["AccountTrader"] },
