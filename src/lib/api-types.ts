@@ -28,12 +28,16 @@ export interface Summary {
   top10: Array<{ symbol: string; bid: string; ask: string; last: string; tradable: boolean }>;
 }
 
+export type AuthMethod = "passkey" | "totp" | "recovery";
+
 export interface SessionView {
   authenticated: boolean;
   registered: boolean;
   email?: string;
   recovery?: boolean;
   stepUp?: boolean;
+  totpEnabled?: boolean;
+  authMethod?: AuthMethod;
 }
 
 export interface RuleView {

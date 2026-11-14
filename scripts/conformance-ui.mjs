@@ -70,7 +70,7 @@ try {
   });
 
   let body = await text();
-  const signinNeedles = ["One owner. Passkey to sign in. Email is only for recovery.", "Recovery email", "Email a recovery link"];
+  const signinNeedles = ["One owner. Sign in with your passkey, or with an authenticator code if you have set one up. Email is only for recovery.", "Recovery email", "Email a recovery link"];
   if (body.includes("Create passkey") || body.includes("Sign in")) {
     const missing = includesAll(body, signinNeedles);
     record("U-11", missing.length ? "FAIL" : "PASS", missing.length ? `sign-in missing ${JSON.stringify(missing)}` : "sign-in copy visible");

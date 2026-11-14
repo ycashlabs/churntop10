@@ -32,7 +32,7 @@ function sqliteMini(db: DatabaseSync): MiniDb {
 }
 
 describe("migrations", () => {
-  it("applies a fresh 0001–0006 database and backfills the signal catalog", async () => {
+  it("applies a fresh 0001–0007 database and backfills the signal catalog", async () => {
     const db = new DatabaseSync(":memory:");
     applyFile(db, "0001_init.sql");
     applyFile(db, "0002_v2.sql");
@@ -40,6 +40,7 @@ describe("migrations", () => {
     applyFile(db, "0004_live_sync.sql");
     applyFile(db, "0005_trade_signals_threshold.sql");
     applyFile(db, "0006_trade_signals_name_reason.sql");
+    applyFile(db, "0007_auth_totp.sql");
     const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as Array<{ name: string }>;
     const names = tables.map((row) => row.name);
     expect(names).toEqual(expect.arrayContaining([
@@ -47,7 +48,10 @@ describe("migrations", () => {
       "trading_rules", "rule_versions", "rule_signals", "price_marks",
       "position_reviews", "position_capital_history", "position_exit_settings_history",
       "rule_score_snapshots", "signal_score_snapshots",
+      "totp", "totp_backup_codes",
     ]));
+    const sessionCols = db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>;
+    expect(sessionCols.map((col) => col.name)).toEqual(expect.arrayContaining(["auth_method", "stepup_method"]));
     const result = await migrateV2Data(sqliteMini(db), 1_700_000_000_000);
     expect(result.rules).toBe(0);
     const signals = db.prepare("SELECT COUNT(*) AS n FROM signals").get() as { n: number };
