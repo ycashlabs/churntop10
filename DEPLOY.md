@@ -9,7 +9,7 @@ Account `f59b2545f5783d93b378006f3eb10bb4`. Zones `churncapital.com` (canonical 
 | | dev | prod |
 | --- | --- | --- |
 | Worker | `churntop10-dev` | `churntop10-prod` |
-| Hostname | `desk-dev.churncapital.com` (canonical); `top10-dev.ycashlabs.com` still attached | `top10.ycashlabs.com` (prod cutover to `desk.churncapital.com` needs go-ahead) |
+| Hostname | `desk-dev.churncapital.com` (canonical); `top10-dev.ycashlabs.com` still attached | `desk.churncapital.com` (canonical); `top10.ycashlabs.com` still attached |
 | D1 name | `churntop10-dev` | `churntop10-prod` |
 | R2 bucket | `churntop10-audit-dev` | `churntop10-audit-prod` |
 
@@ -60,7 +60,7 @@ The other option is to make `migrations/0001_init.sql` idempotent first: change 
 
 Dev is served by Workers Custom Domains, not zone routes. The canonical name `desk-dev.churncapital.com` and the previous name `top10-dev.ycashlabs.com` both point at Worker `churntop10-dev`. `env.dev` records both as `{ "pattern": "…", "custom_domain": true }`. Do not also add a zone route for either hostname.
 
-Prod is served the same way: `top10.ycashlabs.com` is a Workers Custom Domain on Worker `churntop10-prod`. `env.prod` records it as `{ "pattern": "top10.ycashlabs.com", "custom_domain": true }`. Do not add a zone route for it. A zone route would only be needed for a different design:
+Prod is served the same way: the canonical name `desk.churncapital.com` and the previous name `top10.ycashlabs.com` are both Workers Custom Domains on Worker `churntop10-prod`. `env.prod` records both as `{ "pattern": "…", "custom_domain": true }`. Do not add a zone route for either hostname. A zone route would only be needed for a different design:
 
 ```bash
 curl -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/workers/routes" \
@@ -70,7 +70,7 @@ curl -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/workers/routes
 
 ## Bindings
 
-The Worker reads these names. Dev values are shown. Prod swaps the names in the table above and sets `ENVIRONMENT` to `prod`, `HOSTNAME` to `top10.ycashlabs.com`, `ALLOWED_HOSTS` to empty, and `ACCESS_ENFORCE` to `1`. A later prod cutover changes `HOSTNAME` to `desk.churncapital.com` and sets `ALLOWED_HOSTS` to `top10.ycashlabs.com` while both names are live.
+The Worker reads these names. Dev values are shown. Prod sets `ENVIRONMENT` to `prod`, `HOSTNAME` to `desk.churncapital.com`, `ALLOWED_HOSTS` to `top10.ycashlabs.com`, and `ACCESS_ENFORCE` to `1`.
 
 | Binding | API `type` | Name | Value |
 | --- | --- | --- | --- |

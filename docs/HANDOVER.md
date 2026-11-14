@@ -6,7 +6,7 @@ Nothing in this note is a secret value. Never paste `TOKEN_KEY`, OAuth tokens, o
 
 Read [DESIGN.md](DESIGN.md) in full first, then this file. Safety rules are in [../AGENTS.md](../AGENTS.md).
 
-Last updated: 14 November 2026, 4:54 AM CST, America/Chicago.
+Last updated: 14 November 2026, 5:24 AM CST, America/Chicago.
 
 ## Owner and approval
 
@@ -28,11 +28,11 @@ The `churncapital.com` apex is the owner's **iCloud+ custom-domain mailbox**. Cu
 | | Dev | Prod |
 | --- | --- | --- |
 | Worker | `churntop10-dev` | `churntop10-prod` |
-| URL | https://desk-dev.churncapital.com (canonical). https://top10-dev.ycashlabs.com stays attached during the move. | https://top10.ycashlabs.com. Planned later, after go-ahead: https://desk.churncapital.com. |
+| URL | https://desk-dev.churncapital.com (canonical). https://top10-dev.ycashlabs.com stays attached during the move. | https://desk.churncapital.com (canonical). https://top10.ycashlabs.com stays attached as a fallback. |
 | Domain type | Workers Custom Domain (not a zone route) | same |
 | D1 name / id | `churntop10-dev` / `7f0a12d3-f689-4a86-b30d-b349bdd77736` | `churntop10-prod` / `b2e4f00d-c7a2-41a6-a75f-12a3043ca20e` |
 | R2 | `churntop10-audit-dev` | `churntop10-audit-prod` |
-| Access app | `Churn Top 10 dev` (`d0a5f257-6f03-4bfc-b8a4-d104a7180e06`), destinations `desk-dev.churncapital.com` and `top10-dev.ycashlabs.com` | `Churn Top 10 prod` (`8f553625-0283-41e0-8a63-c43789e8c3a5`), destination still only `top10.ycashlabs.com` until the prod cutover |
+| Access app | `Churn Top 10 dev` (`d0a5f257-6f03-4bfc-b8a4-d104a7180e06`), destinations `desk-dev.churncapital.com` and `top10-dev.ycashlabs.com` | `Churn Top 10 prod` (`8f553625-0283-41e0-8a63-c43789e8c3a5`), destinations `desk.churncapital.com` and `top10.ycashlabs.com` |
 | Access audience | `3826fb9770402e73a472a3e3519bcdbd4cdcbf79cc695141d3ffb9cdd8a2cdaa` | `b05d3bc57044f2fd02b7e9666d7e61a18e236784bdcbda9ea8322b9d6fe14517` |
 | Policy | Emails, `tom2258@gmail.com` only. No bypass, no service token, no everyone. | same |
 | Access `allowed_idps` | One-time PIN `9f7436ed-…` and Cloudflare IdP `8a3b677e-…`; `auto_redirect_to_identity` is `false` (set 1:22 PM CST 13 Nov 2026). | same |
@@ -42,10 +42,10 @@ The `churncapital.com` apex is the owner's **iCloud+ custom-domain mailbox**. Cu
 | `TOKEN_KEY` | its own Worker secret | its own Worker secret; never reuse dev’s |
 | `AUTH_KEY` | its own Worker secret, set **2:13:30 PM CST** 13 Nov 2026 | its own Worker secret, set **7:49:54 PM CST** 13 Nov 2026; never reuse dev’s |
 | `EMAIL` | `send_email` binding live, `destination_address` `tom2258@gmail.com`, from `noreply@ycashlabs.com`. `ycashlabs.com` was **onboarded** to Email Sending (DNS verified **8:29 PM CST** 13 Nov 2026): `cf-bounce.ycashlabs.com` MX (`route1`/`route2`/`route3.mx.cloudflare.net`) and SPF (`v=spf1 include:_spf.mx.cloudflare.net ~all`), DKIM TXT at `cf-bounce._domainkey.ycashlabs.com` (selector `cf-bounce`, so `d=ycashlabs.com`). Apex `_dmarc` remains `v=DMARC1; p=reject; sp=reject; adkim=s; aspf=s`; apex SPF remains `v=spf1 -all`. Strict DKIM alignment should pass with From `noreply@ycashlabs.com`; strict SPF alignment likely will not (envelope typically `cf-bounce.ycashlabs.com`), so DMARC can still pass on DKIM. No `_dmarc.cf-bounce` record; the apex `sp=reject` covers that subdomain. One recovery email on https://top10-dev.ycashlabs.com was sent to `tom2258@gmail.com` at **8:35:07 PM CST** (owner confirmed arrival in Gmail at **8:36 PM CST**, no errors). Dev D1 then had exactly one unused hashed magic link and one `recovery` audit row; credentials (1) and sessions (3, none recovery) were unchanged from the pre-send snapshot. Worker logs had no `recovery_email_failed`; the POST `/api/auth/recovery` invocation ended `ok`. The link was not consumed. | same binding live on this Worker (same script SHA-256 as current dev). Recovery can send now that the domain is onboarded. No recovery was triggered on prod (0 magic links, 0 recovery audit rows, no `recovery` Worker logs in the 8:00–9:00 PM CST window). |
-| `HOSTNAME` | `desk-dev.churncapital.com` (recovery links use `https://$HOSTNAME`) | `top10.ycashlabs.com` until the prod cutover |
-| `ALLOWED_HOSTS` | `top10-dev.ycashlabs.com` (comma-separated aliases still served by this Worker) | empty until the prod cutover, then `top10.ycashlabs.com` while both names are live |
+| `HOSTNAME` | `desk-dev.churncapital.com` (recovery links use `https://$HOSTNAME`) | `desk.churncapital.com` |
+| `ALLOWED_HOSTS` | `top10-dev.ycashlabs.com` (comma-separated aliases still served by this Worker) | `top10.ycashlabs.com` (previous name still served by this Worker) |
 | `ZONE` | `ycashlabs.com` (From address `noreply@ycashlabs.com`; Email Sending stays on this zone) | same |
-| `TOTP_ISSUER` | `churntop10 Dev`. The `otpauth` label is `churntop10 Dev:tom2258@gmail.com (desk-dev.churncapital.com)`. | `churntop10` in wrangler `env.prod` (not deployed with this change). The `otpauth` label will be `churntop10:tom2258@gmail.com (top10.ycashlabs.com)` when that config is later uploaded. Existing authenticator entries keep the old identical name until the owner sets up again. |
+| `TOTP_ISSUER` | `churntop10 Dev`. The `otpauth` label is `churntop10 Dev:tom2258@gmail.com (desk-dev.churncapital.com)`. | `churntop10`. The `otpauth` label is `churntop10:tom2258@gmail.com (desk.churncapital.com)`. Existing authenticator entries keep the old name until the owner sets up again on desk. |
 
 Local: `npm run dev` on http://localhost:8787, `ACCESS_ENFORCE=0`, `ALLOW_LIVE_TRADING=0`. Never upload the top-level local config.
 
@@ -73,10 +73,11 @@ Redirect is loopback `http://127.0.0.1:47621/callback` only. Do this on **prod**
 4. Paste the full address bar into Settings. State is single-use, 10 minutes.
 5. Disconnect asks confirm: it forgets the saved sign-in and does **not** touch Robinhood orders.
 
-## Current state (13 November 2026, America/Chicago)
+## Current state (14 November 2026, America/Chicago)
 
 ### Prod
 
+- **Hostname cutover (PR #13), owner go-ahead 5:21 AM CST.** Merge `047d775d914671287bb8c83122e7b8847d33b5a6`. Canonical URL https://desk.churncapital.com. https://top10.ycashlabs.com stays attached. Worker version **`84d3fd56-e977-48bc-8ee7-50fcf610a549`**, uploaded **5:22:58 AM CST** (etag `91d18ec34e5c6f6c03f6308afbd836f03814aac9942383deeeec55a9fd7d68ec`, deployment `36fe618e-4397-4af9-b1e4-d12ffaf9f658`, script SHA-256 `0955e2c9d0e6a325b73e66eca022440b7ca4fec0fd945d81cbc7c387d04eaecc`, same bundle as current dev `840beac0-…`). Embedded UI, no `assets`, `TOKEN_KEY` and `AUTH_KEY` kept with `keep_bindings: ["secret_text"]`, `EMAIL` kept, gate `"0"`, `ENVIRONMENT=prod`, `ACCESS_ENFORCE=1`, `HOSTNAME=desk.churncapital.com`, `ALLOWED_HOSTS=top10.ycashlabs.com`, `TOTP_ISSUER=churntop10`. Cron stayed `*/5 * * * *` (not rewritten). No migration was applied. Time Travel bookmark taken before the upload: `000001a0-00000000-00005123-a9a47c57425ea0dce6927cba14e5930b`. Rollback target: previous prod Worker **`eff70b4a-c102-465d-9a13-c4c57949455b`**. Access app destinations are now `desk.churncapital.com` and `top10.ycashlabs.com` (owner-only `tom2258@gmail.com`, same IdPs, no bypass or service tokens). Unauthenticated GET `/` and `/api/health` on both hosts HTTP 302 to the prod Access login (audience kid `b05d3bc5…`, checked **5:24 AM CST**). iCloud+ apex mail records on `churncapital.com` were left untouched. The owner must register a new passkey and re-add the authenticator app on desk (issuer `churntop10`, label `churntop10:tom2258@gmail.com (desk.churncapital.com)`). Existing passkeys on top10 still work on that host.
 - Merge of PR #12: `0fb67e7228eb42a77849d5c0327961e35de9bbe8` at **7:48:50 PM CST**. `main` CI run 43542798044 (push) succeeded at **7:49:59 PM CST** (1m6s). Earlier PR #11 merge `e5a6667a7cf3ff6128cc43fce47c94f9f03873e9`, PR #10 merge `1376f96d1e8cbea5c37aa3fbec18078af2fef83c`, and PR #9 merge `8aa3502d210597d03d499a91bd14e7253f3a196c` remain on `main`.
 - Worker version **`eff70b4a-c102-465d-9a13-c4c57949455b`**, current as of **7:49:54 PM CST** after `AUTH_KEY` was set (putting a secret counts as a deploy of the current script). The TOTP / recovery-email script itself was uploaded **7:49:42 PM CST** as version **`48e5f77c-56a1-42a5-a0b6-c647f1db815d`** (etag `73f4286b5a1e4266358dab909ee4dbcdcfc4d329e423313b283a844fc568e7bf`, deployment `477cfcb6-5f22-4b65-83f5-d9d76937606a`, script SHA-256 `0eb9d0a83b08025e55ee3c6477c6f4d298f21d29942593b7b5a41243f0e63545`, same bundle as current dev). Embedded UI, no `assets`, `TOKEN_KEY` kept, `AUTH_KEY` present as `secret_text` (value never logged; separate from dev), `EMAIL` `send_email` binding with `destination_address` `tom2258@gmail.com`, gate `"0"`, `ENVIRONMENT=prod`, `ACCESS_ENFORCE=1`. Cron stayed `*/5 * * * *` (not rewritten). This is the PR #12 Worker (authenticator-app TOTP backup and recovery email). Unauthenticated GET `/` and `/api/health` still HTTP 302 to the team Access login (checked **7:50 PM CST** after the upload).
 - Rollback target: previous PR #11 Worker **`851a1db9-e7bd-4c52-972f-fc03a6a826d8`** (uploaded 11:31:51 AM CST, SHA-256 `9eb57e17b521a3ab7c82520098bdd9b94519e35fd982347520024e2df72b84b1`, deployment `af8d86c9-cca7-49fe-9805-d0051d655739`). Do not roll past that unless the owner asks. Older PR #10 Worker `a776d60f-86da-460e-8512-b1abaa079e3b` and PR #9 Worker `286f9178-e8f6-407f-b7c7-ab5cf6901144` are behind that.
@@ -121,15 +122,15 @@ Redirect is loopback `http://127.0.0.1:47621/callback` only. Do this on **prod**
 
 ### Open work / pending owner decisions
 
-- [PR #13](https://github.com/churndev/churntop10/pull/13) moves dev onto https://desk-dev.churncapital.com and gives dev and prod distinct authenticator-app names via `TOTP_ISSUER` plus `HOSTNAME` (Worker `840beac0-66b8-4520-9839-898d739add99`). It is **on dev**, not merged, and must not be promoted to prod until the owner gives an explicit go-ahead. After this upload, set up the authenticator again on desk-dev so the app shows issuer `churntop10 Dev` and label `churntop10 Dev:tom2258@gmail.com (desk-dev.churncapital.com)`.
+- [PR #13](https://github.com/churndev/churntop10/pull/13) is **merged** (`047d775d…`) **and on prod and dev**. Prod cutover to https://desk.churncapital.com is done (Worker `84d3fd56-…`, rollback `eff70b4a-…`). The live gate stays `"0"`. The owner still needs to re-enroll a passkey and authenticator app on https://desk.churncapital.com (issuer `churntop10`, label `churntop10:tom2258@gmail.com (desk.churncapital.com)`), and on desk-dev if not already done (`churntop10 Dev` / `churntop10 Dev:tom2258@gmail.com (desk-dev.churncapital.com)`).
 - [PR #12](https://github.com/churndev/churntop10/pull/12) is **merged and on prod**. No further prod promotion is pending for it. The live gate stays `"0"`.
 - **`cursor/spec-v2`**: deleted from the remote at **4:07 PM CST** 13 Nov 2026 at the owner's request. Closed unmerged [PR #6](https://github.com/churndev/churntop10/pull/6) still holds the three docs commits (`dbbf4c8`, `b9d7e6d`, `88920a5`).
 - **Cloudflare Email Sending**: onboarded for `ycashlabs.com` (DNS verified **8:29 PM CST** 13 Nov 2026). The owner triggered one recovery email on **dev** at **8:35:07 PM CST** and confirmed it arrived in Gmail at **8:36 PM CST** with no errors. Prod shares the same Worker script; no recovery was sent on prod. See the `EMAIL` row above for the DNS records and the strict-SPF / DKIM alignment note. Email Sending list APIs still return 403/404 (this connection lacks Email Sending scopes).
-- Access One-time PIN is already on both apps (1:22 PM CST 13 Nov 2026). The dev app now also protects `desk-dev.churncapital.com` (this change). The prod app is unchanged.
-- **Prod hostname cutover** to https://desk.churncapital.com is **not started**. After an explicit go-ahead: attach the Workers Custom Domain (keep `top10.ycashlabs.com`), add it to the prod Access app destinations (keep the owner-only policy and the same `allowed_idps`), set `HOSTNAME=desk.churncapital.com` and `ALLOWED_HOSTS=top10.ycashlabs.com`, deploy to prod with `keep_bindings: ["secret_text"]`, then the owner re-enrolls a passkey and TOTP on the new RP ID. Do not do this until asked.
+- Access One-time PIN is already on both apps (1:22 PM CST 13 Nov 2026). The dev app protects `desk-dev.churncapital.com` and `top10-dev.ycashlabs.com`. The prod app now protects `desk.churncapital.com` and `top10.ycashlabs.com`.
+- **Prod hostname cutover** to https://desk.churncapital.com is **done** (5:22:58 AM CST 14 Nov 2026). Remaining owner step: re-enroll the passkey and authenticator app on the new RP ID. https://top10.ycashlabs.com stays attached.
 - No further prod promotion is pending for PR #11 or PR #12.
 - **Push CI design check:** the `test` job in `.github/workflows/ci.yml` now checks out with `fetch-depth: 0` so `git merge-base` can see `origin/main` on push (the previous shallow checkout failed the design check). A separate dedicated `design` job is still only sketched in [ci-design-job.pending.yml](ci-design-job.pending.yml).
-- Planned, not built: AI-created rules; rule points 0–100; weekly Saturday 9:00 AM CST review (owner routine, not a Worker cron); live 24/5 engine; assign-sell-rule UI; Postgres / failover. The `churncapital.com` app hostname move is in progress on dev (`desk-dev`); prod waits for go-ahead.
+- Planned, not built: AI-created rules; rule points 0–100; weekly Saturday 9:00 AM CST review (owner routine, not a Worker cron); live 24/5 engine; assign-sell-rule UI; Postgres / failover. The `churncapital.com` app hostname move is done on dev (`desk-dev`) and prod (`desk`); previous ycashlabs.com names stay attached as fallbacks.
 
 ## Routines
 
