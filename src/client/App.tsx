@@ -6,13 +6,13 @@ import { SESSION_HELP } from "../lib/clock";
 import { parseCallbackInput } from "../lib/oauth";
 import { getPendingConnect, getReviews, getRuleHistory, getRules, getSession, getSimulator, getSummary, loadCsrf, post, postJson, registerPasskey, signIn } from "./api";
 import { AccountStrip } from "./AccountStrip";
-import { ColumnPanel, SortHeader, ThemeFieldset, ThemeSwitch } from "./chrome";
+import { ColumnMenu, SortHeader, ThemeFieldset, ThemeSwitch } from "./chrome";
 import { Icon } from "./icons";
 import { CONFIDENCE_TITLE, DISABLED_RULE_FILTERS, filterRules, POINTS_TITLE, RISK_TITLE, RULE_FILTERS, ruleFilterEnabled, ruleSortValue, TREND_TITLE, type RuleFilter } from "./rules-table";
 import { formatSignedPct, formatSignedUsd } from "./strip";
 import { columnVisibility, nextSort, readColumnPref, sortRows, type SortState } from "./table-sort";
 import { SEC_CREDIT } from "../lib/sec-credit";
-import { buildTopRows, heatMix, topSortValue, type TopRow } from "./top10-table";
+import { buildTopRows, heatMix, parseUsd, topSortValue, type TopRow } from "./top10-table";
 import { SymbolLabel } from "./symbol";
 import { AuthenticatorSettings, StepUpHost, TotpSignIn } from "./totp-ui";
 
@@ -254,8 +254,8 @@ function TopPage({ summary, onRun }: { summary: Summary; onRun: (action: () => P
     if (id === "last") return row.last;
     if (id === "bid") return row.bid;
     if (id === "ask") return row.ask;
-    if (id === "change") return <Signed n={row.change} />;
-    if (id === "changePct") return <Signed n={row.changePct} pct />;
+    if (id === "change") return <Signed n={row.change} pill />;
+    if (id === "changePct") return <Signed n={row.changePct} pct pill />;
     if (id === "position") return <span title={row.positionTitle}>{row.position}</span>;
     if (id === "pnl") return <Signed n={row.pnl} money />;
     if (id === "target") return <span title={row.targetTitle}>{row.target == null ? "—" : formatSignedPct(row.target)}</span>;
@@ -274,9 +274,8 @@ function TopPage({ summary, onRun }: { summary: Summary; onRun: (action: () => P
       </div>
       <p className="help">This list is editable anytime and limits new first buys only. Positions in a name you later remove are still managed and can still be sold. Adds to a held name follow the scaling-in rules.</p>
       <div className="toolbar">
-        <button type="button" className="icon-btn" onClick={() => setCustomize((open) => !open)}><Icon name="sliders" /> Customize</button>
+        <ColumnMenu open={customize} onOpenChange={setCustomize} columns={TOP_COLUMNS} visible={visible} onToggle={toggleColumn} />
       </div>
-      <ColumnPanel open={customize} columns={TOP_COLUMNS} visible={visible} onToggle={toggleColumn} />
       {view === "table" ? (
         <div className={`table-scroll${scrolled ? " is-scrolled" : ""}`} onScroll={(event) => setScrolled(event.currentTarget.scrollLeft > 0)}>
           <table className="data">
@@ -333,11 +332,18 @@ function TopPage({ summary, onRun }: { summary: Summary; onRun: (action: () => P
   );
 }
 
-function Signed({ n, pct = false, money = false }: { n: number | null; pct?: boolean; money?: boolean }) {
+function Signed({ n, pct = false, money = false, pill = false }: { n: number | null; pct?: boolean; money?: boolean; pill?: boolean }) {
   if (n == null) return <>—</>;
-  const cls = n > 0 ? "up" : n < 0 ? "down" : "";
+  const tone = n > 0 ? "up" : n < 0 ? "down" : "flat";
   const text = pct ? formatSignedPct(n) : money ? formatSignedUsd(n) : `${n > 0 ? "+" : n < 0 ? "−" : ""}${Math.abs(n).toFixed(2)}`;
-  return <span className={cls}>{text}</span>;
+  return <span className={pill ? `pill ${tone}` : tone}>{text}</span>;
+}
+
+function MoneyText({ text }: { text: string }) {
+  const n = parseUsd(text);
+  if (n == null) return <>{text}</>;
+  const tone = n > 0 ? "up" : n < 0 ? "down" : "flat";
+  return <span className={tone}>{text}</span>;
 }
 
 function SettingsPage({ summary, totpEnabled, onRun, onError, onRefresh }: { summary: Summary; totpEnabled: boolean; onRun: (action: () => Promise<Summary | void>) => void; onError: (message: string) => void; onRefresh: () => Promise<void> }) {
@@ -379,10 +385,14 @@ function SettingsPage({ summary, totpEnabled, onRun, onError, onRefresh }: { sum
     setDraft({ ...draft, [key]: Number(value) });
   }
   return (
-    <section className="card">
-      <h2>Settings</h2>
+    <div className="stack settings-page">
+      <div className="page-head"><h2>Settings</h2></div>
       <p className="help">{SESSION_HELP}</p>
-      <ThemeFieldset />
+      <section className="card">
+        <ThemeFieldset />
+      </section>
+      <section className="card">
+      <h3 className="card-title"><Icon name="wallet" /> Trading capital and caps</h3>
       <div className="form-grid">
       <label>Profit target, percent above average cost (any positive percent, up to 100)
         <input type="number" min={0} max={100} step="any" value={draft.profitTargetPct} onChange={(event) => setNumber("profitTargetPct", event.target.value)} />
@@ -396,22 +406,28 @@ function SettingsPage({ summary, totpEnabled, onRun, onError, onRefresh }: { sum
       <label>Order cap, orders per day (1–1000; may be set high, for example 100)
         <input type="number" min={1} max={1000} step={1} value={draft.orderCap} onChange={(event) => setNumber("orderCap", event.target.value)} />
       </label>
+      <div className="wide">
       <TradingCapitalFields summary={summary} draft={draft} onChange={(value) => setDraft({ ...draft, tradingCapital: value })} />
       </div>
-      <p className="muted">There are no buy amount fields. Sizing is the 20% starter (2% of the position’s Trading capital snapshot), signal-sized adds, and a 10% per-symbol cap on that snapshot. Sells have no dollar limit. The app never borrows.</p>
+      </div>
+      <p className="hint">There are no buy amount fields. Sizing is the 20% starter (2% of the position’s Trading capital snapshot), signal-sized adds, and a 10% per-symbol cap on that snapshot. Sells have no dollar limit. The app never borrows.</p>
       <div className="row">
         <button type="button" onClick={() => onRun(() => post("/api/settings", draft))}>Save caps</button>
+      </div>
+      </section>
+      <section className="card">
+      <h3 className="card-title"><Icon name="rightLeft" /> Mode</h3>
+      <div className="row">
         {summary.mode === "view_only" ? (
           <button type="button" onClick={() => onRun(() => post("/api/mode", { mode: "live" }))}>Switch to Live</button>
         ) : (
           <button className="quiet" type="button" onClick={() => onRun(() => post("/api/mode", { mode: "view_only" }))}>Switch to View Only</button>
         )}
-        <SellAllButton onDone={() => onRun(async () => undefined)} />
         {summary.killed && <button className="quiet" type="button" onClick={() => onRun(() => post("/api/resume"))}>Allow new buys again</button>}
-
       </div>
-
-      <h3>Robinhood</h3>
+      </section>
+      <section className="card">
+      <h3 className="card-title"><Icon name="link" /> Robinhood</h3>
       <p className="rh-status">
         {summary.robinhoodStatus === "connected" && <>Connected to {summary.robinhood?.maskedAccount ?? "your account"}.</>}
         {summary.robinhoodStatus === "not_connected" && <>Not connected.</>}
@@ -465,19 +481,30 @@ function SettingsPage({ summary, totpEnabled, onRun, onError, onRefresh }: { sum
           <button type="button" onClick={() => setShowPaste(true)}>Reconnect Robinhood</button>
         </div>
       )}
-      {summary.robinhoodStatus !== "not_connected" && (
-        <div className="row">
-          <button className="quiet" type="button" onClick={() => onRun(async () => {
-            if (!window.confirm("Disconnect Robinhood? The app forgets its saved sign-in. Robinhood orders are not touched.")) return undefined;
-            clearConnect();
-            return post("/api/robinhood/disconnect");
-          })}>Disconnect Robinhood</button>
-        </div>
-      )}
-      <AuthenticatorSettings enabled={totpEnabled} onError={onError} onRefresh={onRefresh} />
-      <p>Saving caps, editing the Top 10 or a rule, marking a rule Proven, and switching to Live or connecting Robinhood each ask for the passkey again, or an authenticator code if you have set one up. Sell All Positions asks for a confirm step, not a passkey. It sells simulated positions only and does not place or cancel real Robinhood orders.</p>
-      <p className="muted sec-credit">{SEC_CREDIT}</p>
-    </section>
+      </section>
+      <AuthenticatorSettings enabled={totpEnabled} onError={onError} onRefresh={onRefresh}>
+        {(danger) => (
+          <section className="card danger-zone">
+            <h3 className="card-title"><Icon name="warning" /> Danger zone</h3>
+            <div className="row">
+              <SellAllButton onDone={() => onRun(async () => undefined)} />
+              {summary.robinhoodStatus !== "not_connected" && (
+                <button className="danger" type="button" onClick={() => onRun(async () => {
+                  if (!window.confirm("Disconnect Robinhood? The app forgets its saved sign-in. Robinhood orders are not touched.")) return undefined;
+                  clearConnect();
+                  return post("/api/robinhood/disconnect");
+                })}>Disconnect Robinhood</button>
+              )}
+              {danger}
+            </div>
+          </section>
+        )}
+      </AuthenticatorSettings>
+      <p className="hint">Saving caps, editing the Top 10 or a rule, marking a rule Proven, and switching to Live or connecting Robinhood each ask for the passkey again, or an authenticator code if you have set one up. Sell All Positions asks for a confirm step, not a passkey. It sells simulated positions only and does not place or cancel real Robinhood orders.</p>
+      <section className="card">
+        <p className="hint sec-credit">{SEC_CREDIT}</p>
+      </section>
+    </div>
   );
 }
 
@@ -599,9 +626,8 @@ function RulesPage() {
             <Icon name="search" />
             <input className="search" type="search" placeholder="Search" aria-label="Search rules" value={query} onChange={(event) => setQuery(event.target.value)} />
           </label>
-          <button type="button" className="icon-btn" onClick={() => setCustomize((open) => !open)}><Icon name="sliders" /> Customize</button>
+          <ColumnMenu open={customize} onOpenChange={setCustomize} columns={RULE_COLUMNS} visible={visible} onToggle={toggleColumn} />
         </div>
-        <ColumnPanel open={customize} columns={RULE_COLUMNS} visible={visible} onToggle={toggleColumn} />
         <div className={`table-scroll${scrolled ? " is-scrolled" : ""}`} onScroll={(event) => setScrolled(event.currentTarget.scrollLeft > 0)}>
           <table className="data">
             <thead>
@@ -719,7 +745,9 @@ function SimulatorPage() {
           {sim.tradingCapital && <><dt>Trading capital</dt><dd>{sim.tradingCapital.effectiveUsd}{sim.tradingCapital.warn ? " (capped at the current balance)" : ""}</dd></>}
         </dl>
         {sim.tradingCapital?.paused && <p className="banner warn">Open exposure is at or above Trading capital. New buys wait until exposure is back under.</p>}
-        <h3>Rules to run</h3>
+      </section>
+      <section className="card">
+        <h3 className="card-title">Rules to run</h3>
         {rules.map((rule) => (
           <label key={rule.id} className="check">
             <input type="checkbox" checked={selected.includes(rule.id)} onChange={() => toggle(rule.id)} />
@@ -801,7 +829,7 @@ function RobinhoodConnect(props: {
     if (auto) onFinish(value);
   }
   return (
-    <div className="card" id="robinhood-paste">
+    <div className="inset-panel" id="robinhood-paste">
       <h3>{props.reconnect ? "Reconnect Robinhood" : "Connect Robinhood"} in 3 steps</h3>
       <ol className="steps">
         <li>
@@ -849,10 +877,10 @@ function TradingCapitalFields({ summary, draft, onChange }: { summary: Summary; 
       <label>Trading capital, dollars
         <input type="number" min={0} step="0.01" value={draft.tradingCapital ?? capital?.saved ?? 0} onChange={(event) => onChange(Number(event.target.value))} />
       </label>
-      <p className="muted">This saved dollar figure is snapshotted onto each new position. Changing it does not alter open positions. Quick fills use the current balance ({capital?.balanceUsd ?? "n/a"}).</p>
+      <p className="hint">This saved dollar figure is snapshotted onto each new position. Changing it does not alter open positions. Quick fills use the current balance ({capital?.balanceUsd ?? "n/a"}).</p>
       {capital?.warn && <p className="banner warn">Trading capital is above the current balance. New trades will use {capital.effectiveUsd}.</p>}
       {capital?.paused && <p className="banner warn">Open exposure ({capital.exposureUsd}) is at or above Trading capital. New buys are paused until exposure is back under.</p>}
-      <div className="row wrap">
+      <div className="preset-grid">
         {(capital?.presets ?? []).map((preset) => (
           <button key={preset.pct} className="quiet" type="button" onClick={() => onChange(preset.dollars)}>{preset.pct}% ({preset.dollars.toFixed(2)})</button>
         ))}
@@ -870,7 +898,7 @@ function PositionsPanel({ title, positions, empty, onChanged }: { title: string;
         <article className="rule" key={position.id}>
           <header>
             <h3><SymbolLabel symbol={position.symbol} name={position.company?.name} exchange={position.company?.exchange} /></h3>
-            <div className="muted">{position.quantity} @ {position.avgCost} · last {position.last} · P&L {position.pnl}</div>
+            <div className="muted">{position.quantity} @ {position.avgCost} · last {position.last} · P&L <MoneyText text={position.pnl} /></div>
           </header>
           <p className="muted">Trading capital snapshot {position.tradingCapital}. Target {position.profitTargetPct}% / stop {position.stopLossPct}% of average cost. {[position.buyRule, position.sellRule].filter(Boolean).join(" · ")}</p>
           <table className="data">
@@ -1016,14 +1044,14 @@ function ReviewPage() {
           <tbody>
             {data.ruleScores.length === 0 && <tr><td colSpan={6}>No score snapshots yet. They are computed daily after trades close.</td></tr>}
             {data.ruleScores.map((row, index) => (
-              <tr key={`${row.rule}-${row.mode}-${index}`}><td className="l">{row.rule}</td><td className="l">{row.mode}</td><td>{row.trades}</td><td>{row.winRate == null ? "—" : `${Math.round(row.winRate * 100)}%`}</td><td>{row.avgPnlPct == null ? "—" : row.avgPnlPct.toFixed(2)}</td><td>{row.worstLoss == null ? "—" : row.worstLoss.toFixed(2)}</td></tr>
+              <tr key={`${row.rule}-${row.mode}-${index}`}><td className="l">{row.rule}</td><td className="l">{row.mode}</td><td>{row.trades}</td><td>{row.winRate == null ? "—" : `${Math.round(row.winRate * 100)}%`}</td><td>{row.avgPnlPct == null ? "—" : <Signed n={row.avgPnlPct} pct />}</td><td>{row.worstLoss == null ? "—" : <Signed n={row.worstLoss} money />}</td></tr>
             ))}
           </tbody>
         </table>
       </section>
       {data.reviews.map((review) => (
         <section className="card" key={review.positionId}>
-          <h3 className="review-title"><SymbolLabel symbol={review.symbol} name={review.company?.name} exchange={review.company?.exchange} /> <span>· {review.exitType} · {review.pnl} ({review.pnlPct})</span></h3>
+          <h3 className="review-title"><SymbolLabel symbol={review.symbol} name={review.company?.name} exchange={review.company?.exchange} /> <span>· {review.exitType} · <MoneyText text={review.pnl} /> (<MoneyText text={review.pnlPct} />)</span></h3>
           <p className="muted">{review.mode} · {review.session} · held {review.holdMinutes} min · {review.addsCount} add{review.addsCount === 1 ? "" : "s"}{review.addsHelped == null ? "" : review.addsHelped ? " (helped)" : " (did not help)"} · {review.buyRule} · {review.sellRule}</p>
           <p>{review.botNote}</p>
           <label>Your note

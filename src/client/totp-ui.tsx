@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { renderSVG } from "uqr";
 import {
   beginTotp,
@@ -35,7 +35,7 @@ export function TotpSignIn({ onDone, onNote }: { onDone: () => void; onNote: (no
   );
 }
 
-export function AuthenticatorSettings({ enabled, onError, onRefresh }: { enabled: boolean; onError: (message: string) => void; onRefresh: () => Promise<void> }) {
+export function AuthenticatorSettings({ enabled, onError, onRefresh, children }: { enabled: boolean; onError: (message: string) => void; onRefresh: () => Promise<void>; children?: (danger: ReactNode) => ReactNode }) {
   const [setup, setSetup] = useState<{ otpauthUri: string; setupKey: string } | null>(null);
   const [code, setCode] = useState("");
   const [backupCodes, setBackupCodes] = useState<string[] | null>(null);
@@ -72,9 +72,13 @@ export function AuthenticatorSettings({ enabled, onError, onRefresh }: { enabled
       onError(err instanceof Error ? err.message : "Could not turn off the authenticator.");
     }
   }
+  const danger = !setup && !backupCodes && enabled ? (
+    <button className="danger" type="button" onClick={() => void turnOff()}>Turn off authenticator app</button>
+  ) : null;
   return (
     <>
-      <h3>Authenticator app</h3>
+      <section className="card">
+      <h3 className="card-title"><Icon name="shield" /> Authenticator app</h3>
       {backupCodes && (
         <div>
           <p>Save these backup codes. Each can be used once. They will not be shown again.</p>
@@ -104,11 +108,12 @@ export function AuthenticatorSettings({ enabled, onError, onRefresh }: { enabled
         <>
           <p>An authenticator app is set up. You can sign in or confirm with a code from the app, or with a backup code.</p>
           <div className="row">
-            <button className="quiet" type="button" onClick={() => void turnOff()}>Turn off authenticator app</button>
             <button type="button" onClick={() => void start()}>Set up again</button>
           </div>
         </>
       )}
+      </section>
+      {children?.(danger)}
     </>
   );
 }

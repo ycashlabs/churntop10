@@ -13,6 +13,10 @@ import {
   type Book,
 } from "./strip";
 
+function pnlTile(id: string): boolean {
+  return id === "day" || id === "total" || id === "best" || id === "worst";
+}
+
 export function AccountStrip({ summary }: { summary: Summary }) {
   const [book, setBook] = useState<Book>(() => defaultStripBook(summary.mode));
   const [sim, setSim] = useState<SimulatorView | null>(null);
@@ -60,8 +64,8 @@ export function AccountStrip({ summary }: { summary: Summary }) {
             return (
               <div className="tile" key={tile.id} title={tile.title}>
                 <div className="tile-label">{tile.label}</div>
-                <div className="tile-value">{tile.value}</div>
-                <div className={`tile-change ${tile.direction}`}>{tile.change}</div>
+                <div className={pnlTile(tile.id) && tile.direction !== "muted" ? `tile-value ${tile.direction}` : "tile-value"}>{tile.value}</div>
+                <div className={tile.change === "paused" ? "tile-change warning" : `tile-change ${tile.direction}`}>{tile.change}</div>
                 <Sparkline samples={samples} />
               </div>
             );

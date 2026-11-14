@@ -1,3 +1,4 @@
+import { useEffect, useId, useLayoutEffect, useRef } from "react";
 import type { SortState } from "./table-sort";
 import { useTheme, type ThemeName } from "./theme";
 import { Icon } from "./icons";
@@ -18,10 +19,10 @@ export function ThemeFieldset() {
   const [theme, setTheme] = useTheme();
   return (
     <fieldset className="theme-set">
-      <legend>Theme</legend>
+      <legend><Icon name="sun" /> Theme</legend>
       <label className="check"><input type="radio" name="theme" checked={theme === "light"} onChange={() => setTheme("light")} /> Light</label>
       <label className="check"><input type="radio" name="theme" checked={theme === "dark"} onChange={() => setTheme("dark")} /> Dark</label>
-      <p className="muted">Light or Dark. The choice is saved in this browser.</p>
+      <p className="hint">Light or Dark. The choice is saved in this browser.</p>
     </fieldset>
   );
 }
@@ -47,21 +48,78 @@ export function SortHeader({ label, column, sort, numeric, align = "right", clas
   );
 }
 
-export function ColumnPanel({ open, columns, visible, onToggle }: {
+export function ColumnMenu({ open, onOpenChange, columns, visible, onToggle }: {
   open: boolean;
+  onOpenChange: (open: boolean) => void;
   columns: { id: string; label: string; locked?: boolean }[];
   visible: Record<string, boolean>;
   onToggle: (id: string, on: boolean) => void;
 }) {
-  if (!open) return null;
+  const rootRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const panelId = useId();
+  useEffect(() => {
+    if (!open) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      onOpenChange(false);
+      buttonRef.current?.focus();
+    }
+    function onPointer(event: MouseEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) onOpenChange(false);
+    }
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onPointer);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onPointer);
+    };
+  }, [open, onOpenChange]);
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    const root = rootRef.current;
+    if (!open || !panel || !root) return;
+    panel.classList.remove("flip");
+    const host = root.getBoundingClientRect();
+    const growRight = host.left + panel.offsetWidth <= window.innerWidth - 12;
+    if (!growRight) panel.classList.add("flip");
+  }, [open, columns.length]);
   return (
-    <div className="customize on">
-      {columns.map((column) => (
-        <label key={column.id}>
-          <input type="checkbox" checked={!!visible[column.id]} disabled={!!column.locked} onChange={(event) => onToggle(column.id, event.target.checked)} />
-          {column.label}
-        </label>
-      ))}
+    <div className="chooser" ref={rootRef}>
+      <button
+        ref={buttonRef}
+        type="button"
+        className="icon-btn"
+        aria-expanded={open}
+        aria-controls={panelId}
+        aria-haspopup="dialog"
+        onClick={() => onOpenChange(!open)}
+      >
+        <Icon name="sliders" /> Customize
+      </button>
+      {open && (
+        <div className="customize" id={panelId} ref={panelRef} role="dialog" aria-label="Customize columns">
+          {columns.map((column) => (
+            <label key={column.id}>
+              <input
+                type="checkbox"
+                checked={column.locked ? true : !!visible[column.id]}
+                disabled={!!column.locked}
+                onChange={(event) => onToggle(column.id, event.target.checked)}
+              />
+              <span>{column.label}</span>
+              {column.locked && (
+                <span className="lock-hint" title="Locked">
+                  <Icon name="lock" size={12} />
+                  <span className="sr-only">Locked</span>
+                </span>
+              )}
+            </label>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -86,11 +144,12 @@ export function Sparkline({ samples, width = 72, height = 28 }: { samples: numbe
   if (!first || lastSample == null || firstSample == null) {
     return <svg width={width} height={height} className="spark" aria-hidden="true" />;
   }
-  const up = lastSample >= firstSample;
+  const delta = lastSample - firstSample;
+  const stroke = delta > 0 ? "var(--up)" : delta < 0 ? "var(--down)" : "var(--flat)";
   return (
     <svg width={width} height={height} className="spark" aria-hidden="true">
       <line x1="0" x2={width} y1={first.y} y2={first.y} stroke="currentColor" strokeDasharray="2 2" strokeWidth="1" opacity="0.45" />
-      {coords.length > 1 && <polyline fill="none" stroke={up ? "var(--up)" : "var(--down)"} strokeWidth="1.5" points={coords.map((item) => `${item.x.toFixed(1)},${item.y.toFixed(1)}`).join(" ")} />}
+      {coords.length > 1 && <polyline fill="none" stroke={stroke} strokeWidth="1.5" points={coords.map((item) => `${item.x.toFixed(1)},${item.y.toFixed(1)}`).join(" ")} />}
     </svg>
   );
 }
