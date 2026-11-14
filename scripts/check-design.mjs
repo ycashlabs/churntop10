@@ -4,10 +4,10 @@
  * Also fail when wrangler config, migrations, deploy scripts, routines-related docs,
  * or env/bindings docs change but docs/HANDOVER.md does not.
  *
- * GitHub's default checkout is shallow. When GITHUB_ACTIONS is set, this script
- * tries to fetch the PR base / origin/main so the compare works without a
- * workflow-file change (the default token cannot add a new workflow without
- * the `workflow` scope). For a dedicated job with fetch-depth: 0, see
+ * GitHub's default checkout is shallow. CI's test job now uses fetch-depth: 0
+ * so merge-base can see origin/main on push. When GITHUB_ACTIONS is set, this
+ * script still tries to fetch the PR base / origin/main as a fallback. A
+ * separate dedicated design job remains sketched in
  * docs/ci-design-job.pending.yml.
  */
 import { execSync } from "node:child_process";

@@ -6,7 +6,7 @@ The goal is to keep the app simple and focused on making profits.
 
 ## Documentation for disaster recovery
 
-Every feature must be documented so the app can be recreated if it has to be rebuilt. This file is the agreed product design. Operational recovery (bindings, Access, deploy, rollback, environments) stays in [DEPLOY.md](../DEPLOY.md), [ROLLBACK.md](../ROLLBACK.md), [docs/ACCESS.md](ACCESS.md), [docs/dev.md](dev.md), and [docs/prod.md](prod.md). Robinhood MCP contracts stay in [docs/contracts/robinhood/](contracts/robinhood/). Session and synthetic-stop detail agreed for the current 24/5 work is in [PR #5](https://github.com/ycashlabs/churntop10/pull/5) (`docs/sessions.md` on that branch). New features are written into this spec, or a doc this spec links, when they are agreed.
+Every feature must be documented so the app can be recreated if it has to be rebuilt. This file is the agreed product design. Operational recovery (bindings, Access, deploy, rollback, environments) stays in [DEPLOY.md](../DEPLOY.md), [ROLLBACK.md](../ROLLBACK.md), [docs/ACCESS.md](ACCESS.md), [docs/dev.md](dev.md), and [docs/prod.md](prod.md). Robinhood MCP contracts stay in [docs/contracts/robinhood/](contracts/robinhood/). Session and synthetic-stop detail agreed for the current 24/5 work is in [PR #5](https://github.com/churndev/churntop10/pull/5) (`docs/sessions.md` on that branch). New features are written into this spec, or a doc this spec links, when they are agreed.
 
 ## Screens
 

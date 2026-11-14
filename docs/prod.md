@@ -1,6 +1,6 @@
 # Prod, as deployed
 
-Living snapshot of ids and pending decisions: [HANDOVER.md](HANDOVER.md). Nothing in this note is a secret value. Prod shares no data or credentials with dev.
+Living snapshot of ids and pending decisions: [HANDOVER.md](HANDOVER.md). Repo: https://github.com/churndev/churntop10 (transferred from `ycashlabs/churntop10` at about 4:50 AM CST 14 Nov 2026; the old URL redirects). Nothing in this note is a secret value. Prod shares no data or credentials with dev. This file does not change the prod Worker.
 
 ## Current prod (PR #12, 13 November 2026, America/Chicago)
 
