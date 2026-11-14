@@ -14,6 +14,8 @@ export interface Env {
   HOSTNAME: string;
   ALLOWED_HOSTS?: string;
   TOTP_ISSUER: string;
+  /** SEC fair-access User-Agent. Default in code is `churntop10 tom@churncapital.com`. */
+  SEC_USER_AGENT?: string;
   TOKEN_KEY?: string;
   AUTH_KEY?: string;
   EMAIL?: SendEmail;

@@ -66,6 +66,29 @@ describe("migrations", () => {
     expect(signalCols.map((col) => col.name)).toEqual(expect.arrayContaining(["threshold", "name", "reason"]));
   });
 
+  it("adds companies keyed by CIK", () => {
+    const db = new DatabaseSync(":memory:");
+    for (const name of [
+      "0001_init.sql", "0002_v2.sql", "0003_v3.sql", "0004_live_sync.sql",
+      "0005_trade_signals_threshold.sql", "0006_trade_signals_name_reason.sql",
+      "0007_auth_totp.sql", "0008_companies.sql",
+    ]) applyFile(db, name);
+    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>;
+    const names = tables.map((row) => row.name);
+    expect(names).toContain("companies");
+    expect(names).toContain("sec_sync");
+    expect(names).not.toContain("sec_companies");
+    const cols = db.prepare("PRAGMA table_info(companies)").all() as Array<{ name: string; pk: number }>;
+    expect(cols.find((col) => col.pk === 1)?.name).toBe("cik");
+    expect(cols.map((col) => col.name)).toEqual(expect.arrayContaining(["ticker", "name", "exchange", "sic", "sic_description", "sector"]));
+    expect(cols.map((col) => col.name)).not.toContain("added_at");
+    expect(cols.map((col) => col.name)).not.toContain("source");
+    const sql = readFileSync(join(root, "migrations", "0008_companies.sql"), "utf8");
+    expect(sql).toContain("CREATE TABLE companies");
+    expect(sql).not.toMatch(/^\s+added_at\b/m);
+    expect(sql).not.toMatch(/^\s+source\b/m);
+  });
+
   it("upgrades a v2 database, moving rules, open positions, and closed trades", async () => {
     const db = new DatabaseSync(":memory:");
     applyFile(db, "0001_init.sql");

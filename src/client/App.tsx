@@ -11,7 +11,9 @@ import { Icon } from "./icons";
 import { CONFIDENCE_TITLE, DISABLED_RULE_FILTERS, filterRules, POINTS_TITLE, RISK_TITLE, RULE_FILTERS, ruleFilterEnabled, ruleSortValue, TREND_TITLE, type RuleFilter } from "./rules-table";
 import { formatSignedPct, formatSignedUsd } from "./strip";
 import { columnVisibility, nextSort, readColumnPref, sortRows, type SortState } from "./table-sort";
+import { SEC_CREDIT } from "../lib/sec-credit";
 import { buildTopRows, heatMix, topSortValue, type TopRow } from "./top10-table";
+import { SymbolLabel } from "./symbol";
 import { AuthenticatorSettings, StepUpHost, TotpSignIn } from "./totp-ui";
 
 type SettingsDraft = Summary["settings"];
@@ -204,6 +206,8 @@ function SummaryPage({ summary }: { summary: Summary }) {
 const TOP_COLUMNS = [
   { id: "rank", label: "#", locked: true },
   { id: "symbol", label: "Symbol", locked: true },
+  { id: "sector", label: "Sector" },
+  { id: "industry", label: "Industry" },
   { id: "last", label: "Last" },
   { id: "bid", label: "Bid" },
   { id: "ask", label: "Ask" },
@@ -217,8 +221,8 @@ const TOP_COLUMNS = [
   { id: "check", label: "Check" },
 ];
 const TOP_NUMERIC = new Set(["rank", "last", "bid", "ask", "change", "changePct", "pnl", "target", "stop"]);
-const TOP_LEFT = new Set(["rank", "symbol", "position", "rule", "check"]);
-const TOP_PREF = "churntop10.top10.columns";
+const TOP_LEFT = new Set(["rank", "symbol", "sector", "industry", "position", "rule", "check"]);
+const TOP_PREF = "churntop10.top10.columns.v2";
 
 function TopPage({ summary, onRun }: { summary: Summary; onRun: (action: () => Promise<Summary | void>) => void }) {
   const [symbols, setSymbols] = useState(summary.top10.map((row) => row.symbol).join("\n"));
@@ -244,7 +248,9 @@ function TopPage({ summary, onRun }: { summary: Summary; onRun: (action: () => P
   }), (row) => sort ? topSortValue(row, sort.key) : row.rank, sort?.dir ?? "asc");
   function cell(row: TopRow, id: string) {
     if (id === "rank") return row.rank;
-    if (id === "symbol") return <span className="sym" title={row.symbol}>{row.symbol}</span>;
+    if (id === "symbol") return <SymbolLabel symbol={row.symbol} name={row.name} exchange={row.company?.exchange} />;
+    if (id === "sector") return row.sector;
+    if (id === "industry") return row.industry;
     if (id === "last") return row.last;
     if (id === "bid") return row.bid;
     if (id === "ask") return row.ask;
@@ -294,7 +300,7 @@ function TopPage({ summary, onRun }: { summary: Summary; onRun: (action: () => P
               {rows.map((row) => (
                 <tr key={row.symbol}>
                   {TOP_COLUMNS.filter((column) => visible[column.id]).map((column) => (
-                    <td key={column.id} className={`${TOP_LEFT.has(column.id) ? "l " : ""}${column.id === "rank" ? "sticky" : column.id === "symbol" ? "sticky2" : ""}`.trim()}>{cell(row, column.id)}</td>
+                    <td key={column.id} className={`${TOP_LEFT.has(column.id) ? "l " : ""}${column.id === "rank" ? "sticky" : column.id === "symbol" ? "sticky2 sym-td" : ""}`.trim()}>{cell(row, column.id)}</td>
                   ))}
                 </tr>
               ))}
@@ -307,7 +313,7 @@ function TopPage({ summary, onRun }: { summary: Summary; onRun: (action: () => P
             const tone = heatMix(row.changePct);
             return (
               <div className="heat" key={row.symbol} style={tone} title={row.changePct == null ? "No previous close on this quote." : `${row.symbol} ${formatSignedPct(row.changePct)}`}>
-                <div className="s">{row.symbol}</div>
+                <div className="s"><SymbolLabel symbol={row.symbol} name={row.name} exchange={row.company?.exchange} /></div>
                 <div>{row.last}</div>
                 <div className="p">{row.changePct == null ? "—" : formatSignedPct(row.changePct)}</div>
               </div>
@@ -322,6 +328,7 @@ function TopPage({ summary, onRun }: { summary: Summary; onRun: (action: () => P
           <button type="button" onClick={() => onRun(() => post("/api/top10", { symbols: symbols.split(/\s+/).filter(Boolean) }))}>Save list</button>
         </div>
       </details>
+      <p className="muted sec-credit">{SEC_CREDIT}</p>
     </section>
   );
 }
@@ -469,6 +476,7 @@ function SettingsPage({ summary, totpEnabled, onRun, onError, onRefresh }: { sum
       )}
       <AuthenticatorSettings enabled={totpEnabled} onError={onError} onRefresh={onRefresh} />
       <p>Saving caps, editing the Top 10 or a rule, marking a rule Proven, and switching to Live or connecting Robinhood each ask for the passkey again, or an authenticator code if you have set one up. Sell All Positions asks for a confirm step, not a passkey. It sells simulated positions only and does not place or cancel real Robinhood orders.</p>
+      <p className="muted sec-credit">{SEC_CREDIT}</p>
     </section>
   );
 }
@@ -730,7 +738,7 @@ function SimulatorPage() {
           <tbody>
             {sim.orders.length === 0 && <tr><td colSpan={5}>No orders yet.</td></tr>}
             {sim.orders.map((order, index) => (
-              <tr key={`${order.symbol}-${order.role}-${index}`}><td className="l">{order.symbol}</td><td className="l">{order.side}</td><td className="l">{order.role}</td><td className="l">{order.status}</td><td>{order.price}</td></tr>
+              <tr key={`${order.symbol}-${order.role}-${index}`}><td className="l sym-td"><SymbolLabel symbol={order.symbol} name={order.company?.name} exchange={order.company?.exchange} /></td><td className="l">{order.side}</td><td className="l">{order.role}</td><td className="l">{order.status}</td><td>{order.price}</td></tr>
             ))}
           </tbody>
         </table>
@@ -739,7 +747,7 @@ function SimulatorPage() {
         <h2>Latest check</h2>
         <ul className="proposals">
           {sim.events.map((event, index) => <li key={`e-${index}`}><strong>{event.action}</strong> {event.detail}</li>)}
-          {sim.proposals.map((proposal) => <li key={`${proposal.symbol}-${proposal.at}`}><strong>{proposal.symbol}</strong> {proposal.verdict}. {proposal.message}</li>)}
+          {sim.proposals.map((proposal) => <li key={`${proposal.symbol}-${proposal.at}`}><SymbolLabel symbol={proposal.symbol} name={proposal.company?.name} exchange={proposal.company?.exchange} /> {proposal.verdict}. {proposal.message}</li>)}
           {sim.events.length === 0 && sim.proposals.length === 0 && <li>No check yet. Select rules and run one.</li>}
         </ul>
       </section>
@@ -861,7 +869,7 @@ function PositionsPanel({ title, positions, empty, onChanged }: { title: string;
       {positions.map((position) => (
         <article className="rule" key={position.id}>
           <header>
-            <h3>{position.symbol}</h3>
+            <h3><SymbolLabel symbol={position.symbol} name={position.company?.name} exchange={position.company?.exchange} /></h3>
             <div className="muted">{position.quantity} @ {position.avgCost} · last {position.last} · P&L {position.pnl}</div>
           </header>
           <p className="muted">Trading capital snapshot {position.tradingCapital}. Target {position.profitTargetPct}% / stop {position.stopLossPct}% of average cost. {[position.buyRule, position.sellRule].filter(Boolean).join(" · ")}</p>
@@ -1015,7 +1023,7 @@ function ReviewPage() {
       </section>
       {data.reviews.map((review) => (
         <section className="card" key={review.positionId}>
-          <h3>{review.symbol} · {review.exitType} · {review.pnl} ({review.pnlPct})</h3>
+          <h3 className="review-title"><SymbolLabel symbol={review.symbol} name={review.company?.name} exchange={review.company?.exchange} /> <span>· {review.exitType} · {review.pnl} ({review.pnlPct})</span></h3>
           <p className="muted">{review.mode} · {review.session} · held {review.holdMinutes} min · {review.addsCount} add{review.addsCount === 1 ? "" : "s"}{review.addsHelped == null ? "" : review.addsHelped ? " (helped)" : " (did not help)"} · {review.buyRule} · {review.sellRule}</p>
           <p>{review.botNote}</p>
           <label>Your note

@@ -291,7 +291,7 @@ describe("strip figures and quote change", () => {
 });
 
 describe("top 10 rows", () => {
-  it("uses existing quote and position fields and skips names that are not on the payload", () => {
+  it("falls back to the symbol and em dashes when no SEC company is on the quote", () => {
     const rows = buildTopRows({
       top10: [{ symbol: "AAPL", bid: "$226.38", ask: "$226.42", last: "$226.40", tradable: true, change: 1.2, changePct: 0.53 }],
       live: [position("AAPL", "live", "+$27.60")],
@@ -304,7 +304,9 @@ describe("top 10 rows", () => {
     expect(row?.position).toContain("Live");
     expect(row?.check).toBe("checked");
     expect(row?.checkTitle).toContain("Checked. Ready for the simulator.");
-    expect(row && "name" in row).toBe(false);
+    expect(row?.name).toBe("");
+    expect(row?.sector).toBe("—");
+    expect(row?.industry).toBe("—");
     const distances = exitDistances(226.4, 224.1, 1, 1);
     expect(distances?.targetPrice).toBeCloseTo(224.1 * 1.01, 4);
     expect(distances?.stopPrice).toBeCloseTo(224.1 * 0.99, 4);

@@ -6,7 +6,7 @@ Nothing in this note is a secret value. Never paste `TOKEN_KEY`, OAuth tokens, o
 
 Read [DESIGN.md](DESIGN.md) in full first, then this file. Safety rules are in [../AGENTS.md](../AGENTS.md).
 
-Last updated: 14 November 2026, 8:11 AM CST, America/Chicago. The look-and-feel UI (PR #15) is on dev and prod. `ALLOW_LIVE_TRADING` stays `"0"`.
+Last updated: 14 November 2026, afternoon CST, America/Chicago. The look-and-feel UI (PR #15) is on dev (`04450417-…`) and prod (`001408dd-…`). SEC company names, sector, and industry are in the repo (migration `0008_companies.sql`, `SEC_USER_AGENT`) and are **not deployed**. `0008` is not applied on dev or prod D1. `ALLOW_LIVE_TRADING` stays `"0"`. No Cloudflare resource was changed for the SEC work.
 
 ## Owner and approval
 
@@ -47,6 +47,7 @@ The `churncapital.com` apex is the owner's **iCloud+ custom-domain mailbox**. Cu
 | `ZONE` | `ycashlabs.com` (fallback only if `EMAIL_FROM` is unset) | same |
 | `EMAIL_FROM` | `noreply@desk-dev.churncapital.com` | `noreply@desk.churncapital.com` |
 | `TOTP_ISSUER` | `churntop10 Dev`. The `otpauth` label is `churntop10 Dev:tom2258@gmail.com (desk-dev.churncapital.com)`. | `churntop10`. The `otpauth` label is `churntop10:tom2258@gmail.com (desk.churncapital.com)`. Existing authenticator entries keep the old name until the owner sets up again on desk. |
+| `SEC_USER_AGENT` | In repo `wrangler.jsonc` as `churntop10 tom@churncapital.com` (local, dev, and prod vars). **Not uploaded.** The Worker also falls back to that same string when the var is missing or has no email. Plain text, not a secret. | same text, also not uploaded |
 
 Local: `npm run dev` on http://localhost:8787, `ACCESS_ENFORCE=0`, `ALLOW_LIVE_TRADING=0`. Never upload the top-level local config.
 
@@ -128,6 +129,7 @@ Redirect is loopback `http://127.0.0.1:47621/callback` only. Do this on **prod**
 ### Open work / pending owner decisions
 
 - **Look and feel (PR #15) is merged and on prod and dev.** Merge `82663699…` (tree identical to `edcb0b1…`). Dev Worker **`04450417-9ab2-4f6b-8a83-0d6122e48075`** (rollback `0ecc5067-…`, bookmark `000001d2-00000000-00005123-5b6087e6ea68e49e4f6b484115b5eef1`). Prod Worker **`001408dd-6587-4ba1-a499-41f8fb1b7e4f`** (rollback `f568be0e-3a0f-49cd-9f6b-ae25789ba895`, bookmark `000001c2-00000000-00005123-f0ecd3c9aa6d20f4b100d19b85a8cd3d`, same bundle). No migration, cron unchanged, Access unchanged, iCloud+ apex records untouched. The live gate stays `"0"`.
+- **SEC company names are not deployed.** Migration `0008_companies.sql` (`companies` keyed by CIK, plus one-row `sec_sync`) is in the repo only. Do not apply it on dev or prod, and do not upload the Worker, until the owner asks. The live Workers stay the PR #15 versions above; `SEC_USER_AGENT` is in `wrangler.jsonc` and is not on them. The cron stays `*/5 * * * *`; the SEC fetch piggybacks on that tick and does not add a schedule. Steady-state D1 writes once this is running are **1 row per day** (the clock) plus, on the weekly SIC day only, one row per shown company (default Top 10: **11 writes** that day). A failed SEC read must not be treated as a cron outage. `ALLOW_LIVE_TRADING` stays `"0"`.
 - [PR #13](https://github.com/churndev/churntop10/pull/13) is **merged** (`047d775d…`) **and on prod and dev**. Prod cutover to https://desk.churncapital.com is done (Worker `84d3fd56-…`, rollback `eff70b4a-…`). The live gate stays `"0"`. The owner still needs to re-enroll a passkey and authenticator app on https://desk.churncapital.com (issuer `churntop10`, label `churntop10:tom2258@gmail.com (desk.churncapital.com)`), and on desk-dev if not already done (`churntop10 Dev` / `churntop10 Dev:tom2258@gmail.com (desk-dev.churncapital.com)`).
 - [PR #12](https://github.com/churndev/churntop10/pull/12) is **merged and on prod**. No further prod promotion is pending for it. The live gate stays `"0"`.
 - **`cursor/spec-v2`**: deleted from the remote at **4:07 PM CST** 13 Nov 2026 at the owner's request. Closed unmerged [PR #6](https://github.com/churndev/churntop10/pull/6) still holds the three docs commits (`dbbf4c8`, `b9d7e6d`, `88920a5`).
@@ -136,7 +138,7 @@ Redirect is loopback `http://127.0.0.1:47621/callback` only. Do this on **prod**
 - **Prod hostname cutover** to https://desk.churncapital.com is **done** (5:22:58 AM CST 14 Nov 2026). Remaining owner step: re-enroll the passkey and authenticator app on the new RP ID. https://top10.ycashlabs.com stays attached.
 - No further prod promotion is pending for PR #11 or PR #12.
 - **Push CI design check:** the `test` job in `.github/workflows/ci.yml` now checks out with `fetch-depth: 0` so `git merge-base` can see `origin/main` on push (the previous shallow checkout failed the design check). A separate dedicated `design` job is still only sketched in [ci-design-job.pending.yml](ci-design-job.pending.yml).
-- Planned, not built: AI-created rules; rule points 0–100; weekly Saturday 9:00 AM CST review (owner routine, not a Worker cron); live 24/5 engine; assign-sell-rule UI; Postgres / failover. The `churncapital.com` app hostname move is done on dev (`desk-dev`) and prod (`desk`); previous ycashlabs.com names stay attached as fallbacks.
+- Planned, not built: AI-created rules; rule points 0–100; weekly Saturday 9:00 AM CST review (owner routine, not a Worker cron); live 24/5 engine; assign-sell-rule UI; Postgres / failover; Companies registry and Company Profile (the `companies` table is the CIK-keyed base, not the registry). The `churncapital.com` app hostname move is done on dev (`desk-dev`) and prod (`desk`); previous ycashlabs.com names stay attached as fallbacks.
 
 ## Routines
 

@@ -191,6 +191,31 @@ table.data tr:hover .sticky, table.data tr:hover .sticky2 { background: var(--su
   border: 1px solid var(--line); font-weight: 500; font-size: 14px; line-height: 1.25;
   background: var(--surface);
 }
+.symbol-label { display: inline-flex; align-items: center; gap: 8px; max-width: 280px; vertical-align: middle; }
+.symbol-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
+.symbol-text .co {
+  color: var(--muted); font-size: 11px; font-weight: 400; line-height: 1.2;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px;
+}
+table.data td.sym-td { height: auto; padding-top: 4px; padding-bottom: 4px; }
+.letter-avatar { width: 22px; height: 22px; flex: none; display: block; }
+.letter-avatar rect { fill: var(--surface-2); }
+.letter-avatar text {
+  fill: var(--ink);
+  font-family: InterVariable, Inter, system-ui, sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+}
+.letter-avatar.tone-0 rect { fill: color-mix(in srgb, #2f68cb 42%, var(--surface-2)); }
+.letter-avatar.tone-1 rect { fill: color-mix(in srgb, #3a784f 42%, var(--surface-2)); }
+.letter-avatar.tone-2 rect { fill: color-mix(in srgb, #8a6d1f 42%, var(--surface-2)); }
+.letter-avatar.tone-3 rect { fill: color-mix(in srgb, #c2322b 36%, var(--surface-2)); }
+.letter-avatar.tone-4 rect { fill: color-mix(in srgb, #6b4c9a 40%, var(--surface-2)); }
+.letter-avatar.tone-5 rect { fill: color-mix(in srgb, #0f6f8a 40%, var(--surface-2)); }
+.letter-avatar.tone-6 rect { fill: color-mix(in srgb, #b45309 38%, var(--surface-2)); }
+.letter-avatar.tone-7 rect { fill: color-mix(in srgb, #3f6212 40%, var(--surface-2)); }
+.sec-credit { font-size: 12px; line-height: 1.25; margin: 8px 0 0; }
+.review-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .actions { display: flex; gap: 6px; justify-content: flex-end; }
 .actions button, button.tiny {
   font-size: 12px; padding: 3px 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 6px; font-weight: 500;
