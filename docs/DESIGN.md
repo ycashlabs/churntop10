@@ -103,7 +103,7 @@ Sell All Positions, rollback, and kill/resume must not call cancel or place.
 
 ## 3. Screens, layout, and structure
 
-The document title (HTML `<title>` and the `h1`) is **Churn Top 10**. The shell is a cream page with a header, nav, status stamp, clock, session name, and Sign out. Authenticated routes:
+The document title (HTML `<title>` and the `h1`) is **Churn Top 10**. Visual layout, type, color, the account strip, and the dense tables are specified in [Look and feel](#look-and-feel). Exact wording stays in [§6](#6-ui-copy-catalog). Authenticated routes:
 
 | Path | Screen |
 | --- | --- |
@@ -114,22 +114,132 @@ The document title (HTML `<title>` and the `h1`) is **Churn Top 10**. The shell 
 | `/review` | Review |
 | `/settings` | Settings |
 
-Nav order, left to right: Account Summary, Top 10, Rules, Simulator, Review, Settings. The current route gets class `active`.
+Nav order: Account Summary, Top 10, Rules, Simulator, Review, Settings. The current route gets class `active`. On a wide screen the nav is a left sidebar. Below 982px it is a horizontal scroller under the header. No item is dropped.
 
-**Header (every authenticated screen):** title, nav, stamp (`New buys stopped` if Sell All is on, else `Live` if mode is live, else `View only`), clock (`YYYY-MM-DD HH:MM ET`), raw session name (`regular` / `extended` / `overnight` / `closed`), button **Sign out**.
+**Header (every authenticated screen):** wordmark `Churn Top 10`, stamp (`New buys stopped` if Sell All is on, else `Live` if mode is live, else `View only`), clock (`YYYY-MM-DD HH:MM ET`), raw session name (`regular` / `extended` / `overnight` / `closed`), theme switch, button **Sign out**.
 
-**Global banners** (above the page body, can stack):
+**Account strip** (every authenticated screen, under the header): see [Look and feel](#look-and-feel). It does not change trading mode.
+
+**Global banners** (under the account strip, can stack):
 
 - If mode is not live: View Only banner (exact copy in [§6](#6-ui-copy-catalog)).
 - If mode is live and `liveGate` is false: broker gate off banner.
 - If `killed`: Sell All Positions is on banner.
 - Request errors as `<p className="error">`.
 
-**Sign-in** (`/` when unauthenticated or in recovery) is a separate shell (`signin`): title, short explanation, optional recovery banner, Create passkey or Sign in, optional authenticator-code form when TOTP is enrolled, recovery email form.
+**Sign-in** (`/` when unauthenticated or in recovery) is a separate shell (no sidebar, no account strip): a centered card branded **Churn Capital** / **Churn Top 10**, the §6.2 explanation, an account row for the single owner, Create passkey or Sign in, the authenticator-code form when TOTP is enrolled, and the recovery email form. The same theme switch sits on the card. Flows are unchanged.
 
-**Shared position panel** (`PositionsPanel`) is used on Account Summary (**Live positions**) and Simulator (**Simulated positions**). Each open position is an article: symbol heading, qty @ avg · last · P&L, capital snapshot and target/stop and rule labels, a trades table (Side, Qty, Price, Status, Reason) with stored signals listed under the reason as specified in [§6](#6-screens-and-exact-ui-copy), and if open: **Edit capital** and **Edit target / stop**.
+**Shared position panel** (`PositionsPanel`) is used on Account Summary (**Live positions**) and Simulator (**Simulated positions**). Each open position is an article: symbol heading, qty @ avg · last · P&L, capital snapshot and target/stop and rule labels, a trades table (Side, Qty, Price, Status, Reason) with stored signals listed under the reason as specified in [§6](#6-screens-and-exact-ui-copy), and if open: **Edit capital** and **Edit target / stop**. Those confirms, Sell All, and the passkey step-up are centered dialogs. Copy and buttons are unchanged.
 
-There are no tooltips in the current UI (`title=` attributes are not used on controls). Status “badges” are the header `stamp` and each rule’s `stamp` class (`experimenting` / `proven` / `retired`) showing the raw status string.
+Status badges keep the raw strings `experimenting` / `proven` / `retired`. Hover and focus use native `title` tooltips where [Look and feel](#look-and-feel) names them (truncated rule text, score caveats, target/stop math, disabled filters).
+
+---
+
+## Look and feel
+
+Light finance-desk layout and density, inspired by a screener only. No Yahoo logos, names, fonts, or wording. Brand is **Churn Top 10** / **Churn Capital**. Color is used for meaning (up, down, warning, stamp, proven, links). This section is the visual contract. It does not change auth, trading, the rules engine, cron, or `ALLOW_LIVE_TRADING`.
+
+### Principles
+
+Information density is the point: about 32px table rows, 8px horizontal cell padding, many columns at 1440px, a sticky header and leading column, a summary strip above the page, and a **Customize** column chooser. At 390px the tables and the strip scroll horizontally. Rank and symbol (Top 10) or the rule name (Rules) stay sticky. Columns are not hidden to simplify the phone view; the owner hides them with Customize.
+
+One design system covers every screen from sign-in through Settings. The theme is **Light** or **Dark** only (no System option). Default is light. The choice is saved in `localStorage` under `churntop10.theme` (`light` or `dark`) and applied on `document.documentElement` (`data-theme` and `color-scheme`) before paint. The header switch and Settings → **Theme** edit the same value.
+
+Existing §6 copy stays verbatim. New chrome strings (theme, Customize, Table View, Heatmap View, filter names, strip labels, Churn Capital) are in §6 next to the screen they belong to.
+
+### Typography
+
+Self-hosted Inter variable, SIL Open Font License 1.1: `fonts/InterVariable.woff2` (Inter 4.1) and `fonts/LICENSE.txt` (Copyright (c) 2016 The Inter Project Authors, https://github.com/rsms/inter). No font CDN. Stack: `"InterVariable", "Inter", system-ui, sans-serif`. `font-optical-sizing: auto`. Weights 400, 500, and 700. Prices, percents, quantities, clocks, and scores use `font-variant-numeric: tabular-nums`.
+
+| Token | Size | Weight | Line height | Letter spacing | Use |
+| --- | --- | --- | --- | --- | --- |
+| `micro` | 10px | 400 | 1.2 | 0 | Sparkline crumbs |
+| `badge` | 11px | 500 | 1.2 | 0 | Compact counts, book toggle |
+| `caption` | 12px | 400 | 1.25 | 0 | Table headers, help, top-bar meta |
+| `body` | 14px | 400 | 1.4 | 0 | Body, table cells, form values |
+| `body-medium` | 14px | 500 | 1.25 | 0 | Sidebar, symbol pills, strip values |
+| `label-lg` | 16px | 500 | 1.4 | 0 | Form labels |
+| `title-sm` | 18px | 700 | 1.25 | −0.01em | Small section titles |
+| `title` | 24px | 700 | 1.25 | −0.01em | Page title (`h2`) |
+| `display` | 32px | 700 | 1.15 | −0.02em | Sign-in heading only |
+| `brand` | 14px | 700 | 1.2 | 0.2px | Shell wordmark |
+
+Sidebar links are 14px / 500 / line-height 1.28. The sign-in subtitle stays the existing 16px sentence.
+
+### Color
+
+Light (default): `--bg #f1f3f5`, `--surface #ffffff`, `--surface-2 #f7f8f9`, `--ink #242a30`, `--muted #6b7280`, `--line #e5e7eb`, `--up #3a784f`, `--down #c2322b`, `--warning #8a6d1f`, `--accent #2f68cb`, `--stamp #9d2c2c`, `--good #1f6b45`.
+
+Dark: `--bg #0e1114`, `--surface #181c21`, `--surface-2 #12161a`, `--ink #e8eaed`, `--muted #9aa0a6`, `--line #2a2f36`, `--up #5aa074`, `--down #e06a64`, `--warning #d4a017`, `--accent #6ea0e8`, `--stamp #e07070`, `--good #5aa074`.
+
+Spacing uses 2, 4, 8, 12, 16, 20, 24, 28, 32px. Table rows are 32px, headers 28px. Sidebar width is 200px and collapses below 982px. Auth card radius is 32px. Inputs and the account row are 12px. Sign-in buttons are pills (999px). In-app buttons are 8px. Focus ring is 2px `--accent`. Primary buttons are `--ink` fill with `--surface` text. Quiet buttons are transparent with a 1px `--ink` border. Danger (`Sell All Positions`, `Confirm sell all`) uses `--stamp`.
+
+### Icons
+
+Font Awesome Free 6.7.2 solid icons, inlined as SVG in the client bundle (`src/client/icons.tsx`). License text is `icons/LICENSE.txt` (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT; Copyright 2024 Fonticons, Inc.). Nothing is loaded from Font Awesome or any other host. `font-src` stays `'self'`. The embedded asset writer stores `.woff2` as base64 so the Inter file survives the Worker bundle. Used names: key, shield, mail, user, sun, moon, logout, table, grid, sliders, search, chevron, menu, close.
+
+### Account strip
+
+A Sim / Live badge and tiles sit on every signed-in screen. The badge chooses which book the tiles read. It does not call `POST /api/mode`. Default is **Sim** when Settings mode is `view_only`, and **Live** when mode is `live`. A masked live account, when connected, is the existing `maskedAccount` value (`••••` plus the last four). `SIM0000999` is never shown.
+
+Tiles, left to right after the badge: Account value, Today's P/L, Total P/L, Cash (simulator) or Buying power (live), Open positions, Today's trades, Win rate, Deployed / cap, Best position, Worst position. Each has a 11px label, a 14px/500 value, a change line, and a small client-side sparkline. The dotted sparkline line is the first sample stored for that ET date. Samples live in tab memory (`rememberSample`). A reload starts a new line. There is no timeseries table.
+
+Refresh, without a new write path:
+
+- The signed-in shell still loads `GET /api/summary` once on sign-in and after actions that already returned a summary. That call still runs `summary()` → `syncLiveHoldings()`, same as before. It is not on a timer.
+- The strip polls every **5 minutes** and again when the tab becomes visible (`visibilitychange`). Sim uses `GET /api/simulator` (`simulator()` is seed + `buildSimulator`; no cycle, no holdings sync). Live uses `GET /api/summary?read=1`, which calls `summaryRead()` → `buildSummary` and does **not** call `syncLiveHoldings()`.
+- `GET /api/reviews` is not polled. Win rate and closed P&L are computed at read time inside `buildSimulator` / `buildSummary` from `listReviews` (a SELECT).
+- A failed live quote read can still audit `quotes_failed`. That is the existing `quoteBook()` behavior shared with `GET /api/simulator`, not a holdings sync.
+
+`desk` on both payloads (computed, no extra write): `dayStartEquity`, `dayPnl` (signed equity − day-start equity on the simulator; `null` on the live summary), `equityValue`, `closedPnl`, `winRateToday`, `winRate7d`. Today is the ET calendar day. 7d is that day plus the six calendar days before it. Open imports with no `closedAt` are not closed P&L. Live Today's P/L is `robinhood.todayPnl` and the tile says **Today realized**. A disconnected live book shows **Not connected** on Account value and does not invent a balance; the existing not-connected sentence is the tooltip. Best and worst are open-position P&L versus average cost, not a since-midnight mark. Empty win rate is `—` with title `Not enough closed trades yet.`
+
+### Top 10 table
+
+Heading, help, **Symbols, one per line**, and **Save list** stay §6.4. The editor sits in a disclosure under the table. **Table View** / **Heatmap View** toggles the same rows. Heatmap color is the change percent. A symbol with no previous close is neutral and shows `—`.
+
+Columns whose data already exists (Customize can hide any except # and Symbol; preference `churntop10.top10.columns`):
+
+| Column | Source |
+| --- | --- |
+| # | Order of `top10` (rank) |
+| Symbol | Symbol pill |
+| Last, Bid, Ask | Existing strings, `Unavailable` when missing |
+| Change, Change % | `last` minus `previousClose` already on the parsed quote. `null` when previous close was not reported. Not a new quote request. |
+| Position | `{quantity} @ {avgCost} · Live` or `· Sim` from open positions already on the summary and simulator payloads |
+| P&L | Position `pnl` |
+| Target, Stop | Percent from last to `avgCost * (1 ± exit percent / 100)`. `—` if not held. Tooltip states the prices. |
+| Rule | `{buyRule} · {sellRule}`, or `—` |
+| Check | Latest simulator proposal `verdict` for that symbol, message in the tooltip, or `—` |
+
+Not shown, because they are not on the quote payload: company name, 1D series, volume, 52-week range. Do not invent them.
+
+### Rules table
+
+Heading **Rules contract**, the §6.6 help, and the actions **Edit / rename**, **Mark Proven**, **Move to Experimenting**, **Retire**, **History** stay. Status badges stay the raw strings. Side stays `Buy rule` / `Sell rule`. Signals stay joined by `", "` or `Uses Settings percentages`. `No trades yet.` is the profit cell when `tradeCount` is 0. Other empty numbers stay `—`. The plain-English body is the name cell’s tooltip and the edit form.
+
+Columns: Name (`name` plus `v{version}`), Side, Status, Points, Trend, Profit (`avgProfit`), Win rate, Risk (worst loss, tooltip that the Risk points component is not built), Confidence, Trades, Last triggered, Signals, Actions. Points, Trend, and Confidence render `—`. Points tooltip: `Points 0–100 are not built yet. Weights would be Profit 40%, Win rate 25%, Risk 20%, Confidence 15%.` Customize key: `churntop10.rules.columns`. Name and Actions stay visible.
+
+`lastTriggeredAt` on `GET /api/rules` is the max `trades.created_at` for any version in the family (a SELECT). `null` when none.
+
+Filter chips, verbatim, plus a search box (name, side, status, signals, and the plain-English body):
+
+| Name | Logic |
+| --- | --- |
+| All | No status or score filter |
+| Active | `proven` or `experimenting` |
+| Proven | `status === "proven"` |
+| Experimenting | `status === "experimenting"` |
+| Suggest approval | Disabled. Tooltip: points 0–100 are not built; the rule would be a score above 70 for 2 weeks and at least 30 trades; the app never auto-approves. |
+| Suggest retire | Disabled. Tooltip: points under 30 are not built; the app never auto-retires. |
+| Top scorers | Disabled. Tooltip: there is no 0–100 score to rank. |
+| Losing money | `tradeCount > 0` and `avgProfit < 0`. Rules with no trades stay out. |
+| Recently triggered | `lastTriggeredAt` within the last 24 hours. |
+
+Disabled chips are `disabled` and do not filter. They are not filled with fake scores.
+
+### Sign-in card
+
+Centered `--surface` card on `--bg`, 32px corners, max width 420px. Eyebrow **Churn Capital**. Heading **Churn Top 10** at display size. Subtitle is the existing §6.2 sentence. Account row: monogram and `tom2258@gmail.com` (or `session.email` when the session has one) with role **Owner**. Not a multi-account picker. No Remove control. Full-width pills with a leading icon. Labels stay `Sign in`, `Create passkey`, `Sign in with code`, `Email a recovery link`, `Use a backup code` / `Use an authenticator code`. Recovery banner, invalid-link error, and the step-up dialog keep their §6.2 copy. Dark mode uses the dark tokens on the same card.
 
 ---
 
@@ -264,8 +374,9 @@ All strings below are **verbatim** from `src/client/App.tsx` and `SESSION_HELP` 
 - Loading (authenticated, summary not in yet): `Loading the account…`
 - Generic load failure: `Could not load.`
 - Generic action failure: `Request failed.`
-- Nav: `Account Summary` · `Top 10` · `Rules` · `Simulator` · `Review` · `Settings`
+- Nav: `Account Summary` · `Top 10` · `Rules` · `Simulator` · `Review` · `Settings` (sidebar; same order)
 - Stamp: `New buys stopped` | `Live` | `View only`
+- Theme switch label: `Dark` when the theme is light, `Light` when it is dark
 - Button: `Sign out`
 - Banner, View Only: `View Only. Live real-money trading stays off until you explicitly approve it. The Simulator has its own screen and fake money.`
 - Banner, live mode but gate off: `Live is selected, but the broker gate is off. No real Robinhood orders are sent. Use the Simulator screen to run selected rules with fake money.`
@@ -274,6 +385,9 @@ All strings below are **verbatim** from `src/client/App.tsx` and `SESSION_HELP` 
 
 ### 6.2 Sign-in
 
+- Eyebrow: `Churn Capital`
+- Heading: `Churn Top 10`
+- Account row role: `Owner` (address `tom2258@gmail.com`, or `session.email` when present)
 - `One owner. Sign in with your passkey, or with an authenticator code if you have set one up. Email is only for recovery.`
 - Banner: `Recovery confirmed. Register a new passkey to replace the old one.`
 - Error (query `recovery=invalid`): `That recovery link is invalid or already used.`
@@ -342,7 +456,9 @@ All strings below are **verbatim** from `src/client/App.tsx` and `SESSION_HELP` 
 
 - Heading: `Top 10`
 - Help: `This list is editable anytime and limits new first buys only. Positions in a name you later remove are still managed and can still be sold. Adds to a held name follow the scaling-in rules.`
-- Table headers: `Symbol`, `Bid`, `Ask`, `Last`
+- Table headers that have data: `#`, `Symbol`, `Last`, `Bid`, `Ask`, `Change`, `Change %`, `Position`, `P&L`, `Target`, `Stop`, `Rule`, `Check`. `Name`, `1D`, `Volume`, and `52 Week Range` are not columns.
+- View toggle: `Table View` · `Heatmap View`
+- Button: `Customize`
 - Label: `Symbols, one per line`
 - Button: `Save list`
 - Server validation: `Enter 1 to 10 unique letter symbols.`
@@ -351,6 +467,7 @@ All strings below are **verbatim** from `src/client/App.tsx` and `SESSION_HELP` 
 ### 6.5 Settings
 
 - Heading: `Settings`
+- Theme fieldset legend: `Theme`. Options: `Light` · `Dark`. Help: `Light or Dark. The choice is saved in this browser.`
 - Help: `SESSION_HELP`
 - Labels: see [§4](#4-settings-catalog) (exact label text is in that table).
 - Sizing note: `There are no buy amount fields. Sizing is the 20% starter (2% of the position’s Trading capital snapshot), signal-sized adds, and a 10% per-symbol cap on that snapshot. Sells have no dollar limit. The app never borrows.`
@@ -407,7 +524,8 @@ All strings below are **verbatim** from `src/client/App.tsx` and `SESSION_HELP` 
 - Loading: `Loading rules…` · `Could not load rules.` · `Request failed.`
 - Heading: `Rules contract`
 - Help: `You edit the text; the app proofreads by saving a history entry for every change, status change, and approval. Only you can mark a rule Proven. Live trading uses only Proven rules. The Simulator can run any selected rules, including Experimenting ones. Editing a Proven rule creates a new Experimenting version; open trades keep the versions they started with.`
-- Per rule: name plus `v{version}`; stamp is the raw status (`experimenting`, `proven`, `retired`).
+- Per rule, in the table: name plus `v{version}`; stamp is the raw status (`experimenting`, `proven`, `retired`). The plain-English body is the name tooltip and the edit form.
+- Filter chips, verbatim: `All` · `Active` · `Proven` · `Experimenting` · `Suggest approval` · `Suggest retire` · `Top scorers` · `Losing money` · `Recently triggered`. The three points chips are disabled. Search placeholder: `Search`. Button: `Customize`.
 - Meta: `Buy rule` or `Sell rule` · signal ids joined by `", "` or `Uses Settings percentages`
 - Scorecard: `No trades yet.` or `Win rate {n% or —}. Avg profit {$x.xx or —}. Worst loss {$x.xx or —}. {n} trades.`
 - Buttons: `Edit / rename` · `Mark Proven` · `Move to Experimenting` · `Retire` · `History`
@@ -702,7 +820,7 @@ CSRF: non-GET `/api/*` (except listed auth and callback paths) require the CSRF 
 | POST | `/api/auth/logout` | Clear session |
 | POST | `/api/auth/recovery` | If the address is the owner, issue a 15-minute magic link. On localhost, log the raw token and return `{ ok: true, delivery: "log" }`. On a deployed host, send the mail with the `EMAIL` binding (`send_email`, `destination_address` `tom2258@gmail.com`, from the `EMAIL_FROM` var (`noreply@desk-dev.churncapital.com` on dev, `noreply@desk.churncapital.com` on prod; fallback `noreply@{ZONE}`)) and return `{ ok: true, delivery: "email" }` only after a successful send; otherwise `503` `Recovery email could not be sent.` Never claim `delivery: "email"` when nothing was sent. A non-matching address returns `{ ok: true }` with no `delivery`. The raw token is never logged outside localhost. |
 | GET | `/api/auth/recovery/consume` | Consume link, start recovery session, redirect `/?recovery=1` or `/?recovery=invalid` |
-| GET | `/api/summary` | Account Summary payload (triggers holdings sync) |
+| GET | `/api/summary` | Account Summary payload (triggers holdings sync). `?read=1` is the same payload without `syncLiveHoldings` (strip Live book only). |
 | POST | `/api/cycle` | Account cycle (live entries only if the gate is on) |
 | POST | `/api/kill` | Sell all sim + set killed (legacy path; UI uses `/api/sell-all`) |
 | POST | `/api/resume` | `killed = 0`, mode back to `view_only` |
@@ -832,6 +950,7 @@ Dates are America/Chicago unless noted. All of the following were agreed 13 Nove
 | 14 Nov 2026 | Repository transferred from `ycashlabs/churntop10` to `churndev/churntop10` at about 4:50 AM CST (old URL redirects; the name stayed `churntop10`, not `churn-top-10`). Docs, `package.json` `repository`, and PR links use the new URL. The Cursor GitHub App is installed on `churndev`. CI checkout uses `fetch-depth: 0` so the design check can resolve `merge-base` on push. Deploys remain wrangler from the box; prod was not changed. |
 | 14 Nov 2026 | Prod cutover to https://desk.churncapital.com after an explicit go-ahead. Worker **`84d3fd56-e977-48bc-8ee7-50fcf610a549`** uploaded 5:22:58 AM CST (rollback `eff70b4a-…`). `HOSTNAME=desk.churncapital.com`, `ALLOWED_HOSTS=top10.ycashlabs.com`, `TOTP_ISSUER=churntop10`. No migration; Time Travel bookmark `000001a0-00000000-00005123-a9a47c57425ea0dce6927cba14e5930b`. Prod Access app destinations are now `desk.churncapital.com` and `top10.ycashlabs.com` (owner-only, same IdPs, no bypass or service tokens). Verbatim prod authenticator label is now `churntop10:tom2258@gmail.com (desk.churncapital.com)`. Passkeys and TOTP must be re-enrolled on the new RP ID. iCloud+ apex mail records on `churncapital.com` were left untouched. The live gate stayed `"0"`. |
 | 14 Nov 2026 | Authenticator-app `otpauth` issuer and label are config-driven (`TOTP_ISSUER` plus `HOSTNAME`) so dev and prod entries are not identical. Verbatim: dev issuer `churntop10 Dev`, label `churntop10 Dev:tom2258@gmail.com (desk-dev.churncapital.com)`; prod issuer `churntop10`, label `churntop10:tom2258@gmail.com (desk.churncapital.com)`. Local issuer `churntop10 Local`. Already-enrolled authenticator entries keep the old name until the owner sets up again. Dev Worker **`840beac0-66b8-4520-9839-898d739add99`** uploaded 4:19:26 AM CST (rollback `b0794cc1-…`). Prod was not uploaded. |
+| 14 Nov 2026 | Look and feel shipped in the client only, after the owner approved the frozen visual scope. Light by default, Light/Dark persisted in `localStorage` (`churntop10.theme`), no System option. Inter variable and Font Awesome Free are self-hosted. Account strip polls `GET /api/simulator` and `GET /api/summary?read=1` (no interval on the syncing summary). Top 10 and Rules are dense sortable tables. Points filters stay disabled. Name, 1D, volume, and 52-week columns stay out. No trading, auth, cron, or env change. `ALLOW_LIVE_TRADING` stays `"0"`. Not deployed. |
 | 14 Nov 2026 | Recovery email sender moved off `noreply@ycashlabs.com` onto churncapital.com subdomains after an explicit go-ahead at 7:01 AM CST. From addresses are config-driven (`EMAIL_FROM`): dev `noreply@desk-dev.churncapital.com`, prod `noreply@desk.churncapital.com`, local `noreply@desk-dev.churncapital.com` (localhost still logs the link and does not send). The 15-minute recovery-link TTL is unchanged. Email Sending was onboarded for `desk.churncapital.com` (id `97bf52b3fced458f83e896afa90781bb`) and `desk-dev.churncapital.com` (id `1eeda3790f9546b1add78c2cd846ea0e`) at **7:03:10 AM CST**, adding only subdomain records: `cf-bounce.desk[.dev].churncapital.com` MX (`route1`/`route2`/`route3.mx.cloudflare.net`) and SPF (`v=spf1 include:_spf.mx.cloudflare.net ~all`), DKIM TXT at `cf-bounce._domainkey.desk[.dev].churncapital.com` (selector `cf-bounce`, so `d=desk[.dev].churncapital.com`), and `_dmarc.desk[.dev].churncapital.com` `v=DMARC1; p=reject;`. DNS status was `ready`. The `churncapital.com` apex iCloud+ records (MX `mx01`/`mx02.mail.icloud.com`, TXT `apple-domain=11ccpqOL0trL8Grc`, TXT `v=spf1 include:icloud.com ~all`, CNAME `sig1._domainkey`) were verified unchanged before and after via the zone DNS API and DoH. The apex itself had already been listed as an Email Sending domain since **6:59:34 AM CST** (id `cc2e89dc45ac49798f057a717fc08399`, return-path `cf-bounce.churncapital.com`, plus apex `_dmarc` `v=DMARC1; p=reject;`); this change did not alter or remove that earlier onboarding or those records. The `send_email` binding still only restricts the destination to `tom2258@gmail.com` (no sender restriction). `ZONE` remains `ycashlabs.com` as a fallback if `EMAIL_FROM` is unset. Dev Worker **`0ecc5067-a5ea-4efb-8d8e-89a197d2e945`** uploaded 7:06:43 AM CST (rollback `840beac0-…`). The owner confirmed the dev recovery email arrived and works at **7:11 AM CST**. Prod Worker **`f568be0e-3a0f-49cd-9f6b-ae25789ba895`** uploaded 7:11:48 AM CST after that confirmation (rollback `84d3fd56-e977-48bc-8ee7-50fcf610a549`, Time Travel bookmark `000001b7-00000004-00005123-e8b28e396fe85c0570671553d6010a71`, same bundle as current dev). The prod recovery send was not triggered here (Access); the owner can test it. Apex iCloud+ records were unchanged after the prod upload. The live gate stayed `"0"`. See [HANDOVER.md](HANDOVER.md). |
 
 ---

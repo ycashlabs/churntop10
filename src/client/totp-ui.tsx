@@ -9,6 +9,7 @@ import {
   signInWithTotp,
   totpStepUp,
 } from "./api";
+import { Icon } from "./icons";
 
 export function SetupQr({ value }: { value: string }) {
   return <div className="qr" aria-label="Authenticator QR code" dangerouslySetInnerHTML={{ __html: renderSVG(value) }} />;
@@ -26,9 +27,9 @@ export function TotpSignIn({ onDone, onNote }: { onDone: () => void; onNote: (no
       <label>{backup ? "Backup code" : "Authenticator code"}
         <input value={code} onChange={(event) => setCode(event.target.value)} autoComplete="one-time-code" inputMode={backup ? "text" : "numeric"} />
       </label>
+      <button className="pill" type="submit"><Icon name="shield" size={20} /> Sign in with code</button>
       <div className="row">
-        <button type="submit">Sign in with code</button>
-        <button className="quiet" type="button" onClick={() => { setBackup(!backup); setCode(""); }}>{backup ? "Use an authenticator code" : "Use a backup code"}</button>
+        <button className="linkish" type="button" onClick={() => { setBackup(!backup); setCode(""); }}>{backup ? "Use an authenticator code" : "Use a backup code"}</button>
       </div>
     </form>
   );
@@ -137,7 +138,7 @@ export function StepUpHost({ totpEnabled }: { totpEnabled: boolean }) {
       <div className="card stepup" role="dialog" aria-label="Confirm">
         <p>Confirm with your passkey.</p>
         <div className="row">
-          <button type="button" onClick={() => void passkeyStepUp().then((ok) => { if (ok) finish(true); else setNote("Passkey confirmation failed."); })}>Use passkey</button>
+          <button type="button" onClick={() => void passkeyStepUp().then((ok) => { if (ok) finish(true); else setNote("Passkey confirmation failed."); })}><Icon name="key" /> Use passkey</button>
           <button className="quiet" type="button" onClick={() => finish(false)}>Cancel</button>
         </div>
         {allowTotp && (

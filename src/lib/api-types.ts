@@ -25,7 +25,19 @@ export interface Summary {
   settings: { profitTargetPct: number; stopLossPct: number; dailyLossPct: number; orderCap: number; tradingCapital: number };
   tradingCapital?: TradingCapitalView;
   positions?: PositionView[];
-  top10: Array<{ symbol: string; bid: string; ask: string; last: string; tradable: boolean }>;
+  top10: Array<{ symbol: string; bid: string; ask: string; last: string; tradable: boolean; change: number | null; changePct: number | null }>;
+  /** Read-time account figures for the strip. Absent only on a response from an older Worker. */
+  desk?: DeskFigures;
+}
+
+export interface DeskFigures {
+  dayStartEquity: number;
+  /** Signed equity − day-start equity for the simulator. Null on the live summary, which uses robinhood.todayPnl (realized only). */
+  dayPnl: number | null;
+  equityValue: number | null;
+  closedPnl: number;
+  winRateToday: number | null;
+  winRate7d: number | null;
 }
 
 export type AuthMethod = "passkey" | "totp" | "recovery";
@@ -51,6 +63,8 @@ export interface RuleView {
   version: number;
   createdAt: number;
   updatedAt: number;
+  /** Latest trade that used any version of this rule family. Null when none. Read-only. */
+  lastTriggeredAt: number | null;
   scorecard: { tradeCount: number; winRate: number | null; avgProfit: number | null; worstLoss: number | null };
 }
 
@@ -82,6 +96,7 @@ export interface SimulatorView {
   trades: Array<{ symbol: string; quantity: string; entry: string; exit: string; pnl: string; reason: string; at: number }>;
   events: Array<{ action: string; detail: string; at?: number }>;
   proposals: Array<{ symbol: string; verdict: string; message: string; at: number }>;
+  desk?: DeskFigures;
 }
 
 

@@ -34,6 +34,11 @@ export function getSummary(): Promise<Summary> {
   return api<Summary>("/api/summary");
 }
 
+/** Account figures without syncLiveHoldings. The strip polls this for the Live book. */
+export function getSummaryRead(): Promise<Summary> {
+  return api<Summary>("/api/summary?read=1");
+}
+
 type RegistrationOptions = Parameters<typeof startRegistration>[0]["optionsJSON"];
 type AuthenticationOptions = Parameters<typeof startAuthentication>[0]["optionsJSON"];
 
