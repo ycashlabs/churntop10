@@ -1,4 +1,5 @@
-import type { PositionView, SimulatorView, Summary } from "../lib/api-types";
+import type { CompanyProfile, PositionView, SimulatorView, Summary } from "../lib/api-types";
+import { displaySecText } from "../lib/sec-credit";
 
 export interface TopRow {
   rank: number;
@@ -21,6 +22,10 @@ export interface TopRow {
   rule: string;
   check: string;
   checkTitle: string;
+  company: CompanyProfile | null;
+  name: string;
+  sector: string;
+  industry: string;
 }
 
 export function parseUsd(value: string | null | undefined): number | null {
@@ -94,6 +99,10 @@ export function buildTopRows(input: {
       rule: rule || "—",
       check: proposal ? proposal.verdict : "—",
       checkTitle: proposal ? `${proposal.verdict}. ${proposal.message}` : "",
+      company: quote.company ?? null,
+      name: quote.company?.name?.trim() ?? "",
+      sector: displaySecText(quote.company?.sector),
+      industry: displaySecText(quote.company?.industry),
     };
   });
 }
@@ -112,6 +121,9 @@ export function topSortValue(row: TopRow, key: string): string | number | null {
   if (key === "stop") return row.stop;
   if (key === "rule") return row.rule === "—" ? null : row.rule;
   if (key === "check") return row.check === "—" ? null : row.check;
+  if (key === "name") return row.name || null;
+  if (key === "sector") return row.sector === "—" ? null : row.sector;
+  if (key === "industry") return row.industry === "—" ? null : row.industry;
   return null;
 }
 

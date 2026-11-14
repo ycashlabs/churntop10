@@ -50,7 +50,8 @@
     "EMAIL_FROM": "noreply@desk-dev.churncapital.com",
     "HOSTNAME": "top10-dev.ycashlabs.com",
     "ALLOWED_HOSTS": "",
-    "TOTP_ISSUER": "churntop10 Local"
+    "TOTP_ISSUER": "churntop10 Local",
+    "SEC_USER_AGENT": "churntop10 tom@churncapital.com"
   },
   "env": {
     "dev": {
@@ -85,7 +86,8 @@
         "EMAIL_FROM": "noreply@desk-dev.churncapital.com",
         "HOSTNAME": "desk-dev.churncapital.com",
         "ALLOWED_HOSTS": "top10-dev.ycashlabs.com",
-        "TOTP_ISSUER": "churntop10 Dev"
+        "TOTP_ISSUER": "churntop10 Dev",
+        "SEC_USER_AGENT": "churntop10 tom@churncapital.com"
       }
     },
     "prod": {
@@ -120,7 +122,8 @@
         "EMAIL_FROM": "noreply@desk.churncapital.com",
         "HOSTNAME": "desk.churncapital.com",
         "ALLOWED_HOSTS": "top10.ycashlabs.com",
-        "TOTP_ISSUER": "churntop10"
+        "TOTP_ISSUER": "churntop10",
+        "SEC_USER_AGENT": "churntop10 tom@churncapital.com"
       }
     }
   }

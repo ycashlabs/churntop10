@@ -178,6 +178,8 @@ Spacing uses 2, 4, 8, 12, 16, 20, 24, 28, 32px. Table rows are 32px, headers 28p
 
 Font Awesome Free 6.7.2 solid icons, inlined as SVG in the client bundle (`src/client/icons.tsx`). License text is `icons/LICENSE.txt` (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT; Copyright 2024 Fonticons, Inc.). Nothing is loaded from Font Awesome or any other host. `font-src` stays `'self'`. The embedded asset writer stores `.woff2` as base64 so the Inter file survives the Worker bundle. Used names: key, shield, mail, user, sun, moon, logout, table, grid, sliders, search, chevron, menu, close.
 
+Each ticker also has a first-party letter mark (`src/client/symbol.tsx`): an inline SVG, 22px, rounded rect, the symbol’s first letter in Inter. Eight tone classes (`tone-0` … `tone-7`) mix a fixed hue into `--surface-2`, and the letter uses `--ink`, so the same mark works in light and dark. No image host, no logo API, and no CSP change. `style-src` stays `'self'` (the mark uses classes, not a style attribute).
+
 ### Account strip
 
 A Sim / Live badge and tiles sit on every signed-in screen. The badge chooses which book the tiles read. It does not call `POST /api/mode`. Default is **Sim** when Settings mode is `view_only`, and **Live** when mode is `live`. A masked live account, when connected, is the existing `maskedAccount` value (`••••` plus the last four). `SIM0000999` is never shown.
@@ -197,12 +199,13 @@ Refresh, without a new write path:
 
 Heading, help, **Symbols, one per line**, and **Save list** stay §6.4. The editor sits in a disclosure under the table. **Table View** / **Heatmap View** toggles the same rows. Heatmap color is the change percent. A symbol with no previous close is neutral and shows `—`.
 
-Columns whose data already exists (Customize can hide any except # and Symbol; preference `churntop10.top10.columns`):
+Columns (Customize can hide any except # and Symbol; preference `churntop10.top10.columns.v2`, so a list saved under the previous key does not hide Sector and Industry):
 
 | Column | Source |
 | --- | --- |
 | # | Order of `top10` (rank) |
-| Symbol | Symbol pill |
+| Symbol | Letter mark plus the symbol pill. The company name sits under the symbol when SEC data has it. See [§8.6](#86-sec-company-names-sector-and-industry). |
+| Sector, Industry | SIC division and SIC description from [§8.6](#86-sec-company-names-sector-and-industry). An em dash when the company has no SIC or the row is missing. |
 | Last, Bid, Ask | Existing strings, `Unavailable` when missing |
 | Change, Change % | `last` minus `previousClose` already on the parsed quote. `null` when previous close was not reported. Not a new quote request. |
 | Position | `{quantity} @ {avgCost} · Live` or `· Sim` from open positions already on the summary and simulator payloads |
@@ -211,7 +214,7 @@ Columns whose data already exists (Customize can hide any except # and Symbol; p
 | Rule | `{buyRule} · {sellRule}`, or `—` |
 | Check | Latest simulator proposal `verdict` for that symbol, message in the tooltip, or `—` |
 
-Not shown, because they are not on the quote payload: company name, 1D series, volume, 52-week range. Do not invent them.
+The symbol cell may grow past the 32px row so the company name fits. 1D series, volume, and 52-week range are still not shown. Do not invent them. A missing SEC row leaves the symbol with no name line; Sector and Industry stay an em dash. The table still renders.
 
 ### Rules table
 
@@ -433,7 +436,7 @@ All strings below are **verbatim** from `src/client/App.tsx` and `SESSION_HELP` 
 
 - Heading: `Live positions`
 - Empty: `No open live positions. Robinhood holdings are imported here automatically. Live real-money trading stays off until you approve it.`
-- Per position header line: `{quantity} @ {avgCost} · last {last} · P&L {pnl}`
+- Per position heading: the symbol, with the letter mark and the company name under it when SEC data has it. The line under that stays `{quantity} @ {avgCost} · last {last} · P&L {pnl}`. The buy and sell rule names stay on the following line.
 - Meta: `Trading capital snapshot {tradingCapital}. Target {profitTargetPct}% / stop {stopLossPct}% of average cost. {buyRule} · {sellRule}` (rule names omitted if missing; imported positions use buy rule `imported/manual`)
 - Trades table headers: `Side`, `Qty`, `Price`, `Status`, `Reason`
 - Empty trades: `No trades recorded yet.`
@@ -456,7 +459,8 @@ All strings below are **verbatim** from `src/client/App.tsx` and `SESSION_HELP` 
 
 - Heading: `Top 10`
 - Help: `This list is editable anytime and limits new first buys only. Positions in a name you later remove are still managed and can still be sold. Adds to a held name follow the scaling-in rules.`
-- Table headers that have data: `#`, `Symbol`, `Last`, `Bid`, `Ask`, `Change`, `Change %`, `Position`, `P&L`, `Target`, `Stop`, `Rule`, `Check`. `Name`, `1D`, `Volume`, and `52 Week Range` are not columns.
+- Table headers: `#`, `Symbol`, `Sector`, `Industry`, `Last`, `Bid`, `Ask`, `Change`, `Change %`, `Position`, `P&L`, `Target`, `Stop`, `Rule`, `Check`. The company name is not its own column; it sits under the symbol. `1D`, `Volume`, and `52 Week Range` are not columns.
+- Caption under the table, and again on Settings: `Company names, exchanges, and industries come from SEC public company data. Sector is the SIC division. A company with no SIC shows an em dash.`
 - View toggle: `Table View` · `Heatmap View`
 - Button: `Customize`
 - Label: `Symbols, one per line`
@@ -492,6 +496,7 @@ All strings below are **verbatim** from `src/client/App.tsx` and `SESSION_HELP` 
 - Buttons: `Turn off authenticator app` · `Set up again`
 - Failures: `Could not start authenticator setup.` · `Could not confirm the authenticator.` · `Could not turn off the authenticator.`
 - Footer: `Saving caps, editing the Top 10 or a rule, marking a rule Proven, and switching to Live or connecting Robinhood each ask for the passkey again, or an authenticator code if you have set one up. Sell All Positions asks for a confirm step, not a passkey. It sells simulated positions only and does not place or cancel real Robinhood orders.`
+- SEC credit, under that footer, same sentence as [§6.4](#64-top-10).
 
 **Sell All confirm**
 
@@ -547,7 +552,7 @@ All strings below are **verbatim** from `src/client/App.tsx` and `SESSION_HELP` 
 - Button: `Run check`
 - Positions heading: `Simulated positions`
 - Empty: `No simulated positions.`
-- Heading: `Orders` — headers `Symbol`, `Side`, `Role`, `Status`, `Price` — empty: `No orders yet.`
+- Heading: `Orders` — headers `Symbol`, `Side`, `Role`, `Status`, `Price` — empty: `No orders yet.` The symbol cell uses the same letter mark and company name as Top 10 when the row exists. Latest-check proposals do the same.
 - Heading: `Latest check`
   - Event line: `{action} {detail}`
   - Proposal line: `{symbol} {verdict}. {message}`
@@ -567,7 +572,7 @@ All strings below are **verbatim** from `src/client/App.tsx` and `SESSION_HELP` 
 - Headers: `Rule`, `Mode`, `Trades`, `Win rate`, `Avg P&L %`, `Worst loss`
 - Empty: `No score snapshots yet. They are computed daily after trades close.`
 - Missing numeric cells: `—`
-- Review card title: `{symbol} · {exitType} · {pnl} ({pnlPct})`
+- Review card title: the symbol (letter mark and company name when known) then ` · {exitType} · {pnl} ({pnlPct})`
 - Meta: `{mode} · {session} · held {holdMinutes} min · {addsCount} add(s){ optional " (helped)" or " (did not help)"} · {buyRule} · {sellRule}`
 - Label: `Your note`
 - Button: `Save note` · failure `Could not save the note.`
@@ -704,6 +709,53 @@ The persist planners in `src/lib/sim-persist.ts` now do this:
 Measured locally on a steady-state mid-window tick (10 symbols already stored with 60 bars each, one new bar per symbol, last 12 proposals already stored, 27 unchanged orders, 6 unchanged selected rules, 9 unchanged positions, 9 unchanged same-price marks, unchanged settings): **668 write statements before, 10 after** (`test/sim-persist.test.ts`). A real cron tick still inserts the `sim_cycle` `audit_index` row when the cycle finishes; holdings sync and daily scores write nothing when nothing changed.
 
 
+### 8.6 SEC company names, sector, and industry
+
+Company names, the exchange, and the SIC industry come from the SEC’s public company files. No Nasdaq API, no Robinhood company profile, and no logo service. The browser never calls the SEC. `connect-src` stays `'self'`. There is no SEC seal.
+
+**Names.** On the cron tick, at most once per 24 hours, the Worker GETs `https://www.sec.gov/files/company_tickers_exchange.json`. The file is `{ fields: ["cik", "name", "ticker", "exchange"], data: [...] }`. CIK is stored as a 10-digit string. The ticker is uppercased. The first row for a ticker wins. A blank ticker or CIK is skipped. A body that is not that shape is a failed read, not an empty universe.
+
+**Industry and sector.** For each shown company that has a CIK, at most once per 7 days, the Worker GETs `https://data.sec.gov/submissions/CIK##########.json` and reads `sic` (or `sicCode`) and `sicDescription`. Industry is the SIC description. Sector is the SIC division below. A blank, missing, or `0000` SIC (typical of ETFs and many funds) stores nulls and the UI shows an em dash for both Sector and Industry. A code in a gap stores the description when the SEC sent one, and an em dash for Sector.
+
+| SIC | Sector label |
+| --- | --- |
+| 0100–0999 | Agriculture, Forestry & Fishing |
+| 1000–1499 | Mining |
+| 1500–1799 | Construction |
+| 2000–3999 | Manufacturing |
+| 4000–4999 | Transportation & Utilities (official division E: transportation, communications, and utilities) |
+| 5000–5199 | Wholesale |
+| 5200–5999 | Retail |
+| 6000–6799 | Finance, Insurance & Real Estate (Finance/Insurance/Real Estate) |
+| 7000–8999 | Services |
+| 9100–9729 | Public Administration |
+| 9900–9999 | Nonclassifiable |
+
+Gaps with no sector: 1800–1999, 6800–6999, 9000–9099, 9730–9899.
+
+**Who gets a row.** Only tickers the app shows, in this order, deduped, at most 40: the Top 10, then open positions, then the 20 most recent simulator-order symbols. Symbols must be 1–5 letters, the same shape as a Top 10 symbol. The Rules table has no ticker column, so it does not add symbols. A position heading, a simulator order, a proposal line, and a review title reuse the stored row when the symbol matches. Tickers that are only inside the SEC file are not stored.
+
+**One row per CIK.** `companies.cik` is the primary key. `ticker` is the symbol the app shows for that company, not a second key. Two shown symbols that share a CIK (GOOGL and GOOG) keep one row, using the earlier symbol in the shown list. The other symbol falls back to the letter mark and the symbol until a later ticker map exists. That later map must not rename `companies`.
+
+**Forward path, not built.** A Companies registry (every company researched, watched, or traded, with when and why it was added) and a Company Profile screen (SEC filings and quarterly data) are not in this change. They extend this table with `ALTER TABLE` columns such as `added_at` and `source`. They do not create a ticker-keyed replacement.
+
+**Clock.** `sec_sync` is one row (`id = 1`, `tickers_fetched_at`). It is not a company. The 5-minute cron calls `runSecSync` only from `tickSimulator`, after the simulator cycle. Page loads do not fetch the SEC. Requests in one tick are paced at least 150ms apart (`SEC_MIN_GAP_MS`), which stays under 10 requests per second. The `User-Agent` is the `SEC_USER_AGENT` var when it contains an email, otherwise `churntop10 tom@churncapital.com`. The request also sends `accept: application/json`.
+
+**Writes.** Unchanged company rows are not written. A ticker that is not shown is not written.
+
+| When | D1 writes |
+| --- | --- |
+| Every other 5-minute tick | 0 |
+| The tick when the 24-hour name clock elapses, and names, exchange, and CIK are unchanged, and SIC is not due | 1 (`sec_sync` only) |
+| The tick when the weekly SIC refresh is also due | 1 + S, where S is the number of shown companies with a CIK (each row’s `sic_fetched_at` moves even when the SIC text is unchanged) |
+| First population of the default Top 10, submissions included in the same tick | 11 (10 inserts that already contain the SIC, plus the clock) |
+
+S is at most 40. The exchange file is about 10,000 rows; the write count does not follow the file size. Expected steady day with the default list and no extra positions: **1 write per day**. Expected weekly-refresh day for that list: **11 writes**, all on one tick.
+
+**Failure.** A thrown fetch, a non-JSON body, or a missing `companies` table is caught. `tickSimulator` still finishes. Stored names are not cleared. A failed exchange read still moves `tickers_fetched_at`, and a failed submissions read still moves `sic_fetched_at`, so the next 5-minute tick does not retry. The UI keeps the symbol, and Sector and Industry stay an em dash until a later successful read. Nothing is written to `audit_index` for this sync (that would add writes on a bad day). The Worker logs `sec_sync_failed` when a read fails.
+
+**Where it shows.** Top 10 symbol cell, Sector and Industry columns (Customize, on by default under `churntop10.top10.columns.v2`), position headings, simulator orders and proposals, and review titles. The SEC credit sentence in [§6.4](#64-top-10) is also on Settings.
+
 ## 9. Planned (approved, not built)
 
 Mark these clearly in any rebuild: they are **agreed product direction**, not present in the code.
@@ -718,12 +770,13 @@ Mark these clearly in any rebuild: they are **agreed product direction**, not pr
 - Full **24/5 live** placement and live synthetic-stop / take-profit management against the broker (simulator already has 24/5).
 - UI to **assign a sell rule** to an imported live position.
 - Using `get_equity_tradability` for overnight eligibility once the output contract is captured.
+- **Companies registry and Company Profile.** Every company the desk researches, watches, or trades, with when and why it was added, plus a profile screen of SEC filings and quarterly data. Not built. The `companies` table in [§8.6](#86-sec-company-names-sector-and-industry) is the CIK-keyed base; add columns, do not rename it.
 
 ---
 
-## 10. Full schema (from migrations `0001`–`0006`)
+## 10. Full schema (from migrations `0001`–`0008`)
 
-Apply the numbered SQL files in order. Types are portable (`TEXT`, `INTEGER`, `REAL`); no SQLite-only types in these files. The v3 trading record is designed to move to Postgres later. Exact DDL is in `migrations/`. A fresh database is `0001` + `0002` + `0003` + `0004` + `0005` + `0006`. A v2 database needs `0003` + `0004` + `0005` plus the data backfill `migrateV2Data` in `src/worker/storage/migrate.ts` (copies legacy `rules` / `sim_positions` / `sim_trades` into `trading_rules` / `positions` / `trades` when those are empty, seeds signals, and backfills `trading_capital` from `cash` when capital is 0). Record each file in Wrangler’s `d1_migrations(id, name, applied_at)`.
+Apply the numbered SQL files in order. Types are portable (`TEXT`, `INTEGER`, `REAL`); no SQLite-only types in these files. The v3 trading record is designed to move to Postgres later. Exact DDL is in `migrations/`. A fresh database is `0001` through `0008`. A v2 database needs `0003` + `0004` + `0005` plus the data backfill `migrateV2Data` in `src/worker/storage/migrate.ts` (copies legacy `rules` / `sim_positions` / `sim_trades` into `trading_rules` / `positions` / `trades` when those are empty, seeds signals, and backfills `trading_capital` from `cash` when capital is 0), then the later files. Record each file in Wrangler’s `d1_migrations(id, name, applied_at)`.
 
 `mode` on `positions` is `live` or `sim`. `source` on `positions` is `app` (default) or `imported`. `source` on `trades` is `app` (default), `broker_import`, `broker_qty_change`, or `broker_close`. Re-buying a sold-out symbol opens a **new** position row.
 
@@ -793,7 +846,14 @@ The Worker has `ensureTradeSignalsSchema()` to add `threshold`, `name`, and `rea
 - `ALTER TABLE trade_signals ADD COLUMN name TEXT;`
 - `ALTER TABLE trade_signals ADD COLUMN reason TEXT;`
 
-Relationships (v3 trading core): `trading_rules` 1—N `rule_versions` 1—N `rule_signals` N—1 `signals`; `positions` 1—N `trades` 1—N `trade_signals`; `positions` 1—N `price_marks`, `position_capital_history`, `position_exit_settings_history`; `positions` 1—0..1 `position_reviews`.
+### 10.7 `0008_companies.sql`
+
+- **companies** — `cik TEXT PRIMARY KEY` (10-digit SEC CIK), `ticker TEXT NOT NULL` (the symbol the app shows; not unique, not the key), `name TEXT NOT NULL`, `exchange TEXT NOT NULL DEFAULT ''`, `sic TEXT`, `sic_description TEXT`, `sector TEXT`, `names_fetched_at INTEGER`, `sic_fetched_at INTEGER`, `updated_at INTEGER NOT NULL`. Index `companies_ticker_idx (ticker)`. One company per CIK. `added_at` and `source` are not columns yet; a later registry adds them with `ALTER TABLE` and does not rename this table. See [§8.6](#86-sec-company-names-sector-and-industry).
+- **sec_sync** — `id INTEGER PRIMARY KEY CHECK (id = 1)`, `tickers_fetched_at INTEGER NOT NULL DEFAULT 0`. The daily exchange-file clock. Not a company.
+
+`0008` is in the repo and is **not applied** on dev or prod until the owner asks for that migration. The Worker treats a missing `companies` table as an empty book so the cron and the tables still run.
+
+Relationships (v3 trading core): `trading_rules` 1—N `rule_versions` 1—N `rule_signals` N—1 `signals`; `positions` 1—N `trades` 1—N `trade_signals`; `positions` 1—N `price_marks`, `position_capital_history`, `position_exit_settings_history`; `positions` 1—0..1 `position_reviews`. `companies` stands on CIK and is not a foreign key from `positions` or `top10`.
 
 ---
 
@@ -820,7 +880,7 @@ CSRF: non-GET `/api/*` (except listed auth and callback paths) require the CSRF 
 | POST | `/api/auth/logout` | Clear session |
 | POST | `/api/auth/recovery` | If the address is the owner, issue a 15-minute magic link. On localhost, log the raw token and return `{ ok: true, delivery: "log" }`. On a deployed host, send the mail with the `EMAIL` binding (`send_email`, `destination_address` `tom2258@gmail.com`, from the `EMAIL_FROM` var (`noreply@desk-dev.churncapital.com` on dev, `noreply@desk.churncapital.com` on prod; fallback `noreply@{ZONE}`)) and return `{ ok: true, delivery: "email" }` only after a successful send; otherwise `503` `Recovery email could not be sent.` Never claim `delivery: "email"` when nothing was sent. A non-matching address returns `{ ok: true }` with no `delivery`. The raw token is never logged outside localhost. |
 | GET | `/api/auth/recovery/consume` | Consume link, start recovery session, redirect `/?recovery=1` or `/?recovery=invalid` |
-| GET | `/api/summary` | Account Summary payload (triggers holdings sync). `?read=1` is the same payload without `syncLiveHoldings` (strip Live book only). |
+| GET | `/api/summary` | Account Summary payload (triggers holdings sync). `?read=1` is the same payload without `syncLiveHoldings` (strip Live book only). Top 10 rows and live positions may include `company` (`name`, `exchange`, `industry`, `sector`). The field is null when no SEC row is stored. This route does not call the SEC. |
 | POST | `/api/cycle` | Account cycle (live entries only if the gate is on) |
 | POST | `/api/kill` | Sell all sim + set killed (legacy path; UI uses `/api/sell-all`) |
 | POST | `/api/resume` | `killed = 0`, mode back to `view_only` |
@@ -860,6 +920,7 @@ Default Top 10 on seed: `AAPL`, `MSFT`, `NVDA`, `AMZN`, `GOOGL`, `META`, `AVGO`,
 4. `syncLiveHoldings()`: load holdings (MCP or fixture / empty), load orders if connected, apply pending fills, compute effective Trading capital, `reconcileLiveHoldings`, persist and audit.
 5. `cycleSimulator()`: `quoteBook()` (live quotes for Top 10 **and open live/sim symbols**, else recorded book), `runSimulatorCycle`, save sim state incrementally as in [§8.5](#85-simulator-persistence-and-d1-write-reduction-built) (`quote_bars` append + 24h prune, last 12 `proposals`, no-op skips for unchanged orders/rules/positions/marks/settings, `db.batch()` for the remaining writes), audit each sim event and `sim_cycle`.
 6. If there is at least one **closed** position, `maybeComputeScores()` (no more often than daily).
+7. `syncSecCompanies()` → `runSecSync` ([§8.6](#86-sec-company-names-sector-and-industry)). Caught. A SEC failure does not fail the tick and does not place or cancel an order.
 
 Account Summary `summary()` and Review `reviewScreen()` also `seed` + `syncLiveHoldings`. `cycle()` on the account path may `proposeLiveEntries` only if the live gate is `"1"`.
 
@@ -909,8 +970,8 @@ Detailed commands and current ids: [DEPLOY.md](../DEPLOY.md), [ROLLBACK.md](../R
 
 1. **Cloudflare account and zone.** Workers, D1, R2, Access, and a custom domain on the environment’s zone (`churncapital.com` for the canonical desk hosts and recovery Email Sending on `desk` / `desk-dev`, `ycashlabs.com` still used for aliases).
 2. **Create, per environment:** D1 database, R2 audit bucket, Worker, Workers Custom Domain, Access application (Include → Emails → owner only, short session is fine). Record the Access audience.
-3. **Apply migrations** `0001`–`0007` in order via the D1 query API (one statement at a time is safest). Create `d1_migrations` and insert each filename so Wrangler will not replay them. Take a Time Travel bookmark **before** migrating an existing prod database.
-4. **Set bindings** exactly as in the tables in [dev.md](dev.md) / [prod.md](prod.md): D1, R2, DO `AccountTrader`, `send_email` binding `EMAIL` restricted to `tom2258@gmail.com`, plain-text vars including `ALLOW_LIVE_TRADING=0`, `ACCESS_ENFORCE=1`, `ENVIRONMENT`, Access team and audience, `OWNER_EMAIL`, canonical `HOSTNAME`, optional `ALLOWED_HOSTS` aliases, `TOTP_ISSUER` (`churntop10 Dev` on dev, `churntop10` on prod), `ZONE` (`ycashlabs.com`, fallback only), and `EMAIL_FROM` (`noreply@desk-dev.churncapital.com` on dev, `noreply@desk.churncapital.com` on prod). Create a **new** `TOKEN_KEY` and a **new** `AUTH_KEY` (`openssl rand -base64 32` each) as Worker **secrets** per environment. Onboard `desk.churncapital.com` and `desk-dev.churncapital.com` to Cloudflare Email Sending so those From addresses can send. Do not modify the `churncapital.com` apex iCloud mail records.
+3. **Apply migrations** `0001`–`0008` in order via the D1 query API (one statement at a time is safest). Create `d1_migrations` and insert each filename so Wrangler will not replay them. Take a Time Travel bookmark **before** migrating an existing prod database. `0008` is the SEC `companies` table; do not apply it on prod or dev until the owner asks.
+4. **Set bindings** exactly as in the tables in [dev.md](dev.md) / [prod.md](prod.md): D1, R2, DO `AccountTrader`, `send_email` binding `EMAIL` restricted to `tom2258@gmail.com`, plain-text vars including `ALLOW_LIVE_TRADING=0`, `ACCESS_ENFORCE=1`, `ENVIRONMENT`, Access team and audience, `OWNER_EMAIL`, canonical `HOSTNAME`, optional `ALLOWED_HOSTS` aliases, `TOTP_ISSUER` (`churntop10 Dev` on dev, `churntop10` on prod), `ZONE` (`ycashlabs.com`, fallback only), `EMAIL_FROM` (`noreply@desk-dev.churncapital.com` on dev, `noreply@desk.churncapital.com` on prod), and `SEC_USER_AGENT` (`churntop10 tom@churncapital.com` unless the owner sets another value that includes an email). Create a **new** `TOKEN_KEY` and a **new** `AUTH_KEY` (`openssl rand -base64 32` each) as Worker **secrets** per environment. Onboard `desk.churncapital.com` and `desk-dev.churncapital.com` to Cloudflare Email Sending so those From addresses can send. Do not modify the `churncapital.com` apex iCloud mail records. `SEC_USER_AGENT` is plain text in the repo config and is not a secret. It is not on the deployed Workers until the next upload the owner asks for.
 5. **Build:** `npm install && npm run lint && npm run typecheck && npm test && npm run build && npm run check:html && npm run check:bundle && npm run check:design`. `npm run build` embeds the UI into `dist/index.js`.
 6. **Upload** the Worker with `multipart/form-data` (metadata JSON + `index.js` module). **No `assets` binding.** Pass `keep_bindings: ["secret_text"]` so `TOKEN_KEY` and `AUTH_KEY` are not dropped. Abort the upload if `ALLOW_LIVE_TRADING` is not `"0"` or if an assets binding is present. Confirm cron `*/5 * * * *`.
 7. **Local:** `cp .dev.vars.example .dev.vars`, set `TOKEN_KEY` and `AUTH_KEY`, `npm run dev`, open http://localhost:8787, create a passkey, walk Simulator / Settings. Access is off locally. Recovery links are logged, not emailed, on localhost.
@@ -953,6 +1014,7 @@ Dates are America/Chicago unless noted. All of the following were agreed 13 Nove
 | 14 Nov 2026 | Look and feel shipped in the client only, after the owner approved the frozen visual scope. Light by default, Light/Dark persisted in `localStorage` (`churntop10.theme`), no System option. Inter variable and Font Awesome Free are self-hosted. Account strip polls `GET /api/simulator` and `GET /api/summary?read=1` (no interval on the syncing summary). Top 10 and Rules are dense sortable tables. Points filters stay disabled. Name, 1D, volume, and 52-week columns stay out. No trading, auth, cron, or env change. `ALLOW_LIVE_TRADING` stays `"0"`. Deployed to dev and prod in the following row. |
 | 14 Nov 2026 | Look and feel (PR #15) uploaded to dev and prod after the owner said to push to production. Merge `82663699ba722b22110be5050e4d002ae69c0709` (tree identical to `edcb0b1ce714024bc9d2d0fef89f942c085fe1af`). Dev Worker **`04450417-9ab2-4f6b-8a83-0d6122e48075`** uploaded 7:58:22 AM CST (rollback `0ecc5067-…`, bookmark `000001d2-00000000-00005123-5b6087e6ea68e49e4f6b484115b5eef1`). Prod Worker **`001408dd-6587-4ba1-a499-41f8fb1b7e4f`** uploaded 8:05:02 AM CST (rollback `f568be0e-3a0f-49cd-9f6b-ae25789ba895`, bookmark `000001c2-00000000-00005123-f0ecd3c9aa6d20f4b100d19b85a8cd3d`, same bundle, deployment `8381c66b-4413-4335-851b-590f0b7153a9`). No migration, cron unchanged, gate `"0"`. See [HANDOVER.md](HANDOVER.md). |
 | 14 Nov 2026 | Recovery email sender moved off `noreply@ycashlabs.com` onto churncapital.com subdomains after an explicit go-ahead at 7:01 AM CST. From addresses are config-driven (`EMAIL_FROM`): dev `noreply@desk-dev.churncapital.com`, prod `noreply@desk.churncapital.com`, local `noreply@desk-dev.churncapital.com` (localhost still logs the link and does not send). The 15-minute recovery-link TTL is unchanged. Email Sending was onboarded for `desk.churncapital.com` (id `97bf52b3fced458f83e896afa90781bb`) and `desk-dev.churncapital.com` (id `1eeda3790f9546b1add78c2cd846ea0e`) at **7:03:10 AM CST**, adding only subdomain records: `cf-bounce.desk[.dev].churncapital.com` MX (`route1`/`route2`/`route3.mx.cloudflare.net`) and SPF (`v=spf1 include:_spf.mx.cloudflare.net ~all`), DKIM TXT at `cf-bounce._domainkey.desk[.dev].churncapital.com` (selector `cf-bounce`, so `d=desk[.dev].churncapital.com`), and `_dmarc.desk[.dev].churncapital.com` `v=DMARC1; p=reject;`. DNS status was `ready`. The `churncapital.com` apex iCloud+ records (MX `mx01`/`mx02.mail.icloud.com`, TXT `apple-domain=11ccpqOL0trL8Grc`, TXT `v=spf1 include:icloud.com ~all`, CNAME `sig1._domainkey`) were verified unchanged before and after via the zone DNS API and DoH. The apex itself had already been listed as an Email Sending domain since **6:59:34 AM CST** (id `cc2e89dc45ac49798f057a717fc08399`, return-path `cf-bounce.churncapital.com`, plus apex `_dmarc` `v=DMARC1; p=reject;`); this change did not alter or remove that earlier onboarding or those records. The `send_email` binding still only restricts the destination to `tom2258@gmail.com` (no sender restriction). `ZONE` remains `ycashlabs.com` as a fallback if `EMAIL_FROM` is unset. Dev Worker **`0ecc5067-a5ea-4efb-8d8e-89a197d2e945`** uploaded 7:06:43 AM CST (rollback `840beac0-…`). The owner confirmed the dev recovery email arrived and works at **7:11 AM CST**. Prod Worker **`f568be0e-3a0f-49cd-9f6b-ae25789ba895`** uploaded 7:11:48 AM CST after that confirmation (rollback `84d3fd56-e977-48bc-8ee7-50fcf610a549`, Time Travel bookmark `000001b7-00000004-00005123-e8b28e396fe85c0570671553d6010a71`, same bundle as current dev). The prod recovery send was not triggered here (Access); the owner can test it. Apex iCloud+ records were unchanged after the prod upload. The live gate stayed `"0"`. See [HANDOVER.md](HANDOVER.md). |
+| 14 Nov 2026 | SEC company names, sector, and industry from the public company files only ([§8.6](#86-sec-company-names-sector-and-industry)). Migration `0008_companies.sql` adds `companies` keyed by CIK and the one-row `sec_sync` clock. The exchange file is fetched at most daily, submissions at most weekly, and only for tickers the app shows (at most 40). Steady-state D1 writes are 1 per day; the weekly SIC refresh adds one write per shown company on that one tick. `SEC_USER_AGENT` defaults to `churntop10 tom@churncapital.com`. A failed SEC read does not fail the cron or the table. No logo API, no Nasdaq host, no CSP change, no trading or auth change. `ALLOW_LIVE_TRADING` stays `"0"`. Not deployed, and `0008` is not applied on dev or prod. The Companies registry and Company Profile screen are still not built. |
 
 ---
 

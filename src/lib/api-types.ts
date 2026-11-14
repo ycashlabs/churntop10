@@ -1,3 +1,13 @@
+/** SEC company facts for a symbol the app shows. Absent or null when the row is missing. */
+export interface CompanyProfile {
+  name: string;
+  exchange: string;
+  /** SIC description. Null when the filing has no SIC (ETFs and many funds). */
+  industry: string | null;
+  /** SIC division. Null when there is no SIC or the code sits outside a division. */
+  sector: string | null;
+}
+
 export interface Summary {
   mode: "view_only" | "live";
   killed: boolean;
@@ -25,7 +35,7 @@ export interface Summary {
   settings: { profitTargetPct: number; stopLossPct: number; dailyLossPct: number; orderCap: number; tradingCapital: number };
   tradingCapital?: TradingCapitalView;
   positions?: PositionView[];
-  top10: Array<{ symbol: string; bid: string; ask: string; last: string; tradable: boolean; change: number | null; changePct: number | null }>;
+  top10: Array<{ symbol: string; bid: string; ask: string; last: string; tradable: boolean; change: number | null; changePct: number | null; company?: CompanyProfile | null }>;
   /** Read-time account figures for the strip. Absent only on a response from an older Worker. */
   desk?: DeskFigures;
 }
@@ -92,10 +102,10 @@ export interface SimulatorView {
   selectedRuleIds: string[];
   tradingCapital?: TradingCapitalView;
   positions: PositionView[];
-  orders: Array<{ symbol: string; side: string; type: string; quantity: string; status: string; role: string; price: string }>;
+  orders: Array<{ symbol: string; side: string; type: string; quantity: string; status: string; role: string; price: string; company?: CompanyProfile | null }>;
   trades: Array<{ symbol: string; quantity: string; entry: string; exit: string; pnl: string; reason: string; at: number }>;
   events: Array<{ action: string; detail: string; at?: number }>;
-  proposals: Array<{ symbol: string; verdict: string; message: string; at: number }>;
+  proposals: Array<{ symbol: string; verdict: string; message: string; at: number; company?: CompanyProfile | null }>;
   desk?: DeskFigures;
 }
 
@@ -151,6 +161,7 @@ export interface PositionView {
   stopLossPct: number;
   buyRule?: string;
   sellRule?: string;
+  company?: CompanyProfile | null;
   trades: PositionTradeView[];
 }
 
@@ -171,6 +182,7 @@ export interface ReviewScreen {
     userNote: string;
     buyRule?: string;
     sellRule?: string;
+    company?: CompanyProfile | null;
   }>;
   ruleScores: Array<{
     rule: string;

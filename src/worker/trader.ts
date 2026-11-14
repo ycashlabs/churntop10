@@ -17,7 +17,10 @@ import { closedPnlSum, etDayStart, signedDayPnl, windowWinRate } from "../lib/de
 import { quoteChange } from "../lib/quote-change.js";
 import { dailyLossAmount, validExitPct, validateNewBuy, type GuardContext } from "../lib/validator.js";
 import type { RuleSide, RuleStatus } from "../lib/rules.js";
-import type { DeskFigures, SimulatorView, RuleView, RuleHistoryView, PositionView, ReviewScreen } from "../lib/api-types.js";
+import type { CompanyProfile, DeskFigures, SimulatorView, RuleView, RuleHistoryView, PositionView, ReviewScreen } from "../lib/api-types.js";
+import { resolveSecUserAgent } from "../lib/sec.js";
+import { runSecSync } from "../lib/sec-sync.js";
+import { d1SecStore } from "./sec-db.js";
 import { decryptString, importTokenKey } from "./crypto.js";
 import type { Env } from "./env.js";
 import { effectiveTradingCapital, openExposure, tradingCapitalPresets, validTradingCapital } from "../lib/capital.js";
@@ -92,6 +95,26 @@ export class AccountTrader extends DurableObject<Env> {
     await this.cycleSimulator();
     const closed = await (await this.store()).listPositions(undefined, "closed");
     if (shouldComputeScores(closed.length)) await this.maybeComputeScores();
+    await this.syncSecCompanies();
+  }
+
+  /** SEC names and SIC. A failure here must not fail the trading cron. */
+  private async syncSecCompanies(): Promise<void> {
+    try {
+      const userAgent = resolveSecUserAgent(this.env.SEC_USER_AGENT);
+      const result = await runSecSync(d1SecStore(this.env.DB), {
+        now: Date.now(),
+        userAgent,
+        fetchJson: async (url, headers) => {
+          const response = await fetch(url, { headers });
+          if (!response.ok) throw new Error(`sec_http_${response.status}`);
+          return response.json();
+        },
+      });
+      if (!result.ok && result.error) console.error("sec_sync_failed", result.error);
+    } catch {
+      console.error("sec_sync_failed");
+    }
   }
 
   async simulator(): Promise<SimulatorView> {
@@ -675,6 +698,7 @@ export class AccountTrader extends DurableObject<Env> {
     const robinhood = await this.robinhoodSnapshot();
     const linked = !!(await this.env.DB.prepare("SELECT id FROM rh_tokens WHERE id = 1").first());
     const robinhoodStatus: Summary["robinhoodStatus"] = robinhood ? "connected" : linked || this.robinhoodError ? "error" : "not_connected";
+    const companies = await this.companyProfiles();
     return {
       mode: settings.mode,
       killed: settings.killed === 1,
@@ -694,7 +718,7 @@ export class AccountTrader extends DurableObject<Env> {
         tradingCapital: settings.trading_capital ?? 0,
       },
       tradingCapital: await this.tradingCapitalView(settings.trading_capital ?? 0, robinhood, book.quotes, "live"),
-      positions: await this.positionViews("live", book.quotes),
+      positions: await this.positionViews("live", book.quotes, companies),
       top10: top10.map((symbol) => {
         const quote = book.quotes.find((item) => item.symbol === symbol);
         const previous = quote?.previousClose?.status === "ok" ? quote.previousClose.value : undefined;
@@ -707,6 +731,7 @@ export class AccountTrader extends DurableObject<Env> {
           tradable: quote?.tradable ?? false,
           change: delta?.change ?? null,
           changePct: delta?.changePct ?? null,
+          company: this.companyFor(companies, symbol),
         };
       }),
       desk: await this.deskFigures("live", now, null, settings.day_start_equity, null),
@@ -719,6 +744,7 @@ export class AccountTrader extends DurableObject<Env> {
     const parts = etParts(now);
     const equity = equityOf(state, book.quotes);
     const dayPnl = signedDayPnl(equity, state.dayStartEquity);
+    const companies = await this.companyProfiles();
     return {
       cash: formatUsd(state.cash),
       equity: formatUsd(equity),
@@ -732,7 +758,7 @@ export class AccountTrader extends DurableObject<Env> {
       quoteSource: book.source,
       selectedRuleIds: state.selectedRuleIds,
       tradingCapital: await this.tradingCapitalView(state.tradingCapital, undefined, book.quotes, "sim", equity),
-      positions: await this.positionViews("sim", book.quotes),
+      positions: await this.positionViews("sim", book.quotes, companies),
       orders: state.orders.slice(-20).reverse().map((order) => ({
         symbol: order.symbol,
         side: order.side,
@@ -741,6 +767,7 @@ export class AccountTrader extends DurableObject<Env> {
         status: order.status,
         role: order.role,
         price: formatUsd(order.limit ?? order.stop ?? 0),
+        company: this.companyFor(companies, order.symbol),
       })),
       trades: state.trades.slice(-20).reverse().map((trade) => ({
         symbol: trade.symbol,
@@ -752,7 +779,13 @@ export class AccountTrader extends DurableObject<Env> {
         at: trade.closedAt,
       })),
       events: events.map((event) => ({ action: event.action, detail: JSON.stringify(event.detail) })),
-      proposals: state.proposals.slice(-PROPOSAL_CAP).reverse().map((proposal) => ({ symbol: proposal.symbol, verdict: proposal.verdict, message: proposal.message, at: proposal.createdAt })),
+      proposals: state.proposals.slice(-PROPOSAL_CAP).reverse().map((proposal) => ({
+        symbol: proposal.symbol,
+        verdict: proposal.verdict,
+        message: proposal.message,
+        at: proposal.createdAt,
+        company: this.companyFor(companies, proposal.symbol),
+      })),
       desk: await this.deskFigures("sim", now, equity, state.dayStartEquity, dayPnl),
     };
   }
@@ -858,6 +891,7 @@ export class AccountTrader extends DurableObject<Env> {
     const nameOf = (id?: string) => rules.find((rule) => rule.id === id || rule.familyId === id)?.name;
     const signalName = (id: string) => signals.find((item) => item.id === id)?.name ?? id;
     const ranked = [...signalScores].sort((a, b) => (b.avgPnlTrue ?? 0) - (a.avgPnlTrue ?? 0));
+    const companies = await this.companyProfiles();
     return {
       reviews: reviews.map((row) => ({
         positionId: row.positionId,
@@ -875,6 +909,7 @@ export class AccountTrader extends DurableObject<Env> {
         userNote: row.userNote ?? "",
         buyRule: row.buyRuleName ?? (row.exitType === "imported" || row.exitType === "imported_close" ? "imported/manual" : undefined),
         sellRule: row.sellRuleName,
+        company: this.companyFor(companies, row.symbol),
       })),
       ruleScores: ruleScores.map((row) => ({
         rule: nameOf(row.ruleVersionId) ?? nameOf(row.ruleId) ?? row.ruleId ?? "Rule",
@@ -900,7 +935,31 @@ export class AccountTrader extends DurableObject<Env> {
     await this.audit("review_note", { positionId });
   }
 
-  private async positionViews(mode: "live" | "sim", quotes: QuoteView[]): Promise<PositionView[]> {
+  private async companyProfiles(): Promise<Map<string, CompanyProfile>> {
+    try {
+      const rows = (await this.env.DB.prepare(
+        "SELECT ticker, name, exchange, sic_description, sector FROM companies",
+      ).all<{ ticker: string; name: string; exchange: string; sic_description: string | null; sector: string | null }>()).results;
+      const map = new Map<string, CompanyProfile>();
+      for (const row of rows) {
+        map.set(row.ticker.toUpperCase(), {
+          name: row.name,
+          exchange: row.exchange,
+          industry: row.sic_description?.trim() || null,
+          sector: row.sector?.trim() || null,
+        });
+      }
+      return map;
+    } catch {
+      return new Map();
+    }
+  }
+
+  private companyFor(map: Map<string, CompanyProfile>, symbol: string): CompanyProfile | null {
+    return map.get(symbol.toUpperCase()) ?? null;
+  }
+
+  private async positionViews(mode: "live" | "sim", quotes: QuoteView[], companies: Map<string, CompanyProfile>): Promise<PositionView[]> {
     const store = await this.store();
     const positions = await store.listPositions(mode, "open");
     const versions = await store.listRuleVersions();
@@ -926,6 +985,7 @@ export class AccountTrader extends DurableObject<Env> {
         stopLossPct: position.stopLossPct,
         buyRule: buy ? `${buy.name} v${buy.version}` : labelBuyRule(position),
         sellRule: sell ? `${sell.name} v${sell.version}` : undefined,
+        company: this.companyFor(companies, position.symbol),
         trades: trades.map((trade) => ({
           id: trade.id,
           side: trade.side,
